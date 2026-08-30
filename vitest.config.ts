@@ -7,6 +7,9 @@ export default defineConfig({
       "@nervus/capability-library": fileURLToPath(
         new URL("./packages/capability-library/src/index.ts", import.meta.url),
       ),
+      "@nervus/profile": fileURLToPath(
+        new URL("./packages/profile/src/index.ts", import.meta.url),
+      ),
       nervus: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
     },
     conditions: ["source"],

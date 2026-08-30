@@ -17,11 +17,12 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm build:capability-library && pnpm build:kernel && pnpm build:coding-host",
+    "build": "pnpm build:capability-library && pnpm build:profile && pnpm build:kernel && pnpm build:coding-host",
     "build:capability-library": "pnpm --dir packages/capability-library build",
+    "build:profile": "pnpm --dir packages/profile build",
     "build:kernel": "tsc -p tsconfig.build.json",
     "build:coding-host": "pnpm --dir apps/coding-agent build",
-    "typecheck": "tsc -p tsconfig.json && pnpm --dir packages/capability-library typecheck && pnpm --dir apps/coding-agent typecheck",
+    "typecheck": "tsc -p tsconfig.json && pnpm --dir packages/capability-library typecheck && pnpm --dir packages/profile typecheck && pnpm --dir apps/coding-agent typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -48,6 +49,7 @@
     "tsx": "4.23.12",
     "typescript": "7.0.2",
     "vitest": "4.1.11",
+    "yaml": "2.9.0",
     "zod": "4.5.4"
   }
 }
