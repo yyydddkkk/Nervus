@@ -6,11 +6,18 @@ import type {
   Session,
 } from "../sessions/session.js";
 import { corePlugin } from "./core-plugin.js";
+import {
+  resolveKernelRuntimeOptions,
+  type CallTimeouts,
+  type ConcurrencyLimits,
+} from "./options.js";
 
 export type KernelState = "ready" | "disposing" | "disposed";
 
 export interface KernelOptions {
   plugins?: readonly Plugin<void>[];
+  timeouts?: Partial<CallTimeouts>;
+  concurrency?: Partial<ConcurrencyLimits>;
 }
 
 export class Kernel {
@@ -60,7 +67,7 @@ export async function createKernel(options: KernelOptions = {}): Promise<Kernel>
   const context = new Context();
 
   try {
-    await context.plugin(corePlugin);
+    await context.plugin(corePlugin, resolveKernelRuntimeOptions(options));
 
     for (const plugin of options.plugins ?? []) {
       await context.plugin(plugin);

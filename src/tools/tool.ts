@@ -1,6 +1,8 @@
 import { Service, type Context } from "cordis";
+import Ajv, { type ValidateFunction } from "ajv";
 
 import type { ContentBlock } from "../domain/content.js";
+import { Semaphore } from "../kernel/semaphore.js";
 import type { ToolCall } from "../models/model.js";
 
 export interface ToolExecutionContext {
@@ -31,11 +33,19 @@ export interface ToolDefinition {
   ): Promise<ToolExecutionResult>;
 }
 
-export class ToolsModule extends Service {
-  private readonly tools = new Map<string, ToolDefinition>();
+interface RegisteredTool {
+  readonly definition: ToolDefinition;
+  readonly validate: ValidateFunction;
+}
 
-  constructor(ctx: Context) {
+export class ToolsModule extends Service {
+  private readonly tools = new Map<string, RegisteredTool>();
+  private readonly calls: Semaphore;
+  private readonly ajv = new Ajv({ allErrors: true, strict: false });
+
+  constructor(ctx: Context, maxConcurrentCalls: number) {
     super(ctx, "tools");
+    this.calls = new Semaphore(maxConcurrentCalls);
   }
 
   register(tool: ToolDefinition): void {
@@ -44,9 +54,13 @@ export class ToolsModule extends Service {
         throw new Error(`tool is already registered: ${tool.id}`);
       }
 
-      this.tools.set(tool.id, tool);
+      const registered: RegisteredTool = {
+        definition: tool,
+        validate: this.ajv.compile(tool.inputSchema),
+      };
+      this.tools.set(tool.id, registered);
       return () => {
-        if (this.tools.get(tool.id) === tool) {
+        if (this.tools.get(tool.id) === registered) {
           this.tools.delete(tool.id);
         }
       };
@@ -60,23 +74,56 @@ export class ToolsModule extends Service {
   describe(id: string): ToolDefinition {
     const tool = this.tools.get(id);
     if (!tool) throw new Error(`unknown tool: ${id}`);
-    return tool;
+    return tool.definition;
   }
 
   async execute(
     call: ToolCall,
     context: ToolExecutionContext,
+    timeoutMs: number,
   ): Promise<ToolResult> {
-    const tool = this.describe(call.toolId);
+    const registered = this.tools.get(call.toolId);
+    if (!registered) throw new Error(`unknown tool: ${call.toolId}`);
+    if (!registered.validate(call.arguments)) {
+      return {
+        callId: call.id,
+        toolId: call.toolId,
+        status: "error",
+        content: [
+          {
+            type: "text",
+            text: `invalid tool arguments: ${this.ajv.errorsText(registered.validate.errors)}`,
+          },
+        ],
+      };
+    }
+
+    const tool = registered.definition;
+    const release = await this.calls.acquire(context.signal);
+    const timeoutController = new AbortController();
+    const timer = setTimeout(() => {
+      timeoutController.abort(
+        new DOMException(
+          `tool call timed out after ${timeoutMs}ms`,
+          "TimeoutError",
+        ),
+      );
+    }, timeoutMs);
+    timer.unref();
+    const signal = AbortSignal.any([context.signal, timeoutController.signal]);
 
     try {
-      const result = await tool.execute(call.arguments, context);
+      const result = await raceWithAbort(
+        tool.execute(call.arguments, { ...context, signal }),
+        signal,
+      );
       return {
         callId: call.id,
         toolId: call.toolId,
         ...result,
       };
     } catch (error) {
+      if (context.signal.aborted) throw context.signal.reason;
       return {
         callId: call.id,
         toolId: call.toolId,
@@ -88,7 +135,26 @@ export class ToolsModule extends Service {
           },
         ],
       };
+    } finally {
+      clearTimeout(timer);
+      release();
     }
+  }
+}
+
+async function raceWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw signal.reason;
+
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
   }
 }
 

@@ -21,6 +21,8 @@ Status: complete.
 
 ## M2: Bounded execution
 
+Status: complete.
+
 - Support multiple Steps and parallel same-Step ToolCalls.
 - Add FIFO Session input queues, cancellation, timeouts, concurrency limits, and TurnLimits.
 - Normalize every failure inside the ToolCall boundary into a ToolResult.

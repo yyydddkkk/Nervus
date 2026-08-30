@@ -44,6 +44,11 @@ export type SessionEvent =
       readonly toolCalls: readonly ToolCall[];
     }
   | {
+      readonly type: "model/call-failed";
+      readonly modelCallId: string;
+      readonly error: string;
+    }
+  | {
       readonly type: "assistant/message";
       readonly stepId: string;
       readonly message: AssistantModelMessage;
@@ -67,6 +72,16 @@ export type SessionEvent =
       readonly type: "turn/completed";
       readonly turnId: string;
       readonly output: readonly ContentBlock[];
+    }
+  | {
+      readonly type: "turn/cancelled";
+      readonly turnId: string;
+      readonly reason: string;
+    }
+  | {
+      readonly type: "turn/failed";
+      readonly turnId: string;
+      readonly error: string;
     }
   | { readonly type: "turn/exhausted"; readonly turnId: string };
 

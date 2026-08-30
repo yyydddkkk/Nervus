@@ -1,6 +1,7 @@
 import { Service, type Context } from "cordis";
 
 import type { ContentBlock } from "../domain/content.js";
+import { Semaphore } from "../kernel/semaphore.js";
 
 export interface ToolCall {
   readonly id: string;
@@ -50,9 +51,16 @@ export type ModelEvent =
   | { readonly type: "tool-call"; readonly call: ToolCall }
   | { readonly type: "response-completed" };
 
+export interface ModelExecutionContext {
+  readonly signal: AbortSignal;
+}
+
 export interface ModelAdapter {
   readonly id: string;
-  generate(request: ModelRequest): AsyncIterable<ModelEvent>;
+  generate(
+    request: ModelRequest,
+    context: ModelExecutionContext,
+  ): AsyncIterable<ModelEvent>;
 }
 
 export interface ModelResponse {
@@ -62,9 +70,11 @@ export interface ModelResponse {
 
 export class ModelsModule extends Service {
   private readonly adapters = new Map<string, ModelAdapter>();
+  private readonly calls: Semaphore;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, maxConcurrentCalls: number) {
     super(ctx, "models");
+    this.calls = new Semaphore(maxConcurrentCalls);
   }
 
   register(adapter: ModelAdapter): void {
@@ -86,26 +96,50 @@ export class ModelsModule extends Service {
     return this.adapters.has(id);
   }
 
-  async generate(adapterId: string, request: ModelRequest): Promise<ModelResponse> {
+  async generate(
+    adapterId: string,
+    request: ModelRequest,
+    context: ModelExecutionContext,
+    timeoutMs: number,
+  ): Promise<ModelResponse> {
     const adapter = this.adapters.get(adapterId);
     if (!adapter) throw new Error(`unknown model adapter: ${adapterId}`);
+
+    const release = await this.calls.acquire(context.signal);
 
     let text = "";
     let completed = false;
     const toolCalls: ToolCall[] = [];
 
-    for await (const event of adapter.generate(request)) {
-      switch (event.type) {
-        case "text-delta":
-          text += event.delta;
-          break;
-        case "tool-call":
-          toolCalls.push(event.call);
-          break;
-        case "response-completed":
-          completed = true;
-          break;
+    const timeoutController = new AbortController();
+    const timer = setTimeout(() => {
+      timeoutController.abort(
+        new DOMException(
+          `model call timed out after ${timeoutMs}ms`,
+          "TimeoutError",
+        ),
+      );
+    }, timeoutMs);
+    timer.unref();
+    const signal = AbortSignal.any([context.signal, timeoutController.signal]);
+
+    try {
+      for await (const event of adapter.generate(request, { signal })) {
+        switch (event.type) {
+          case "text-delta":
+            text += event.delta;
+            break;
+          case "tool-call":
+            toolCalls.push(event.call);
+            break;
+          case "response-completed":
+            completed = true;
+            break;
+        }
       }
+    } finally {
+      clearTimeout(timer);
+      release();
     }
 
     if (!completed) {

@@ -3,7 +3,12 @@ import type { SessionEventEnvelope } from "./events.js";
 
 export interface TurnSnapshot {
   readonly id: string;
-  readonly status: "active" | "completed" | "exhausted";
+  readonly status:
+    | "active"
+    | "completed"
+    | "exhausted"
+    | "cancelled"
+    | "failed";
   readonly output: readonly ContentBlock[];
 }
 
@@ -50,6 +55,20 @@ export function projectSession(
         latestTurn = {
           id: event.turnId,
           status: "exhausted",
+          output: [],
+        };
+        break;
+      case "turn/cancelled":
+        latestTurn = {
+          id: event.turnId,
+          status: "cancelled",
+          output: [],
+        };
+        break;
+      case "turn/failed":
+        latestTurn = {
+          id: event.turnId,
+          status: "failed",
           output: [],
         };
         break;

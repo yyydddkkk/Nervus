@@ -1,6 +1,7 @@
 import { Service, type Context } from "cordis";
 
 import type { ContentBlock } from "../domain/content.js";
+import type { CallTimeouts } from "../kernel/options.js";
 
 export interface ModelRef {
   readonly adapter: string;
@@ -20,6 +21,7 @@ export interface AgentSpec {
   readonly instructions?: readonly ContentBlock[];
   readonly tools?: readonly string[];
   readonly limits?: Partial<TurnLimits>;
+  readonly timeouts?: Partial<CallTimeouts>;
 }
 
 export interface AgentSnapshot {
@@ -29,6 +31,7 @@ export interface AgentSnapshot {
   readonly instructions: readonly ContentBlock[];
   readonly tools: readonly string[];
   readonly limits: TurnLimits;
+  readonly timeouts: CallTimeouts;
 }
 
 const DEFAULT_LIMITS: TurnLimits = {
@@ -54,9 +57,11 @@ export class Agent {
 
 export class AgentsModule extends Service {
   private readonly agents = new Map<string, Agent>();
+  private readonly defaultTimeouts: CallTimeouts;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, defaultTimeouts: CallTimeouts) {
     super(ctx, "agents");
+    this.defaultTimeouts = defaultTimeouts;
   }
 
   create(spec: AgentSpec): Agent {
@@ -81,6 +86,7 @@ export class AgentsModule extends Service {
       instructions: Object.freeze([...(spec.instructions ?? [])]),
       tools: Object.freeze(tools),
       limits: Object.freeze({ ...DEFAULT_LIMITS, ...spec.limits }),
+      timeouts: Object.freeze({ ...this.defaultTimeouts, ...spec.timeouts }),
     });
     const agent = new Agent(snapshot);
     this.agents.set(spec.id, agent);

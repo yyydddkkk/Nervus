@@ -6,6 +6,7 @@ import { ModelsModule } from "../models/model.js";
 import { SessionsModule } from "../sessions/session.js";
 import { SkillsModule } from "../skills/skills.js";
 import { ToolsModule } from "../tools/tool.js";
+import type { KernelRuntimeOptions } from "./options.js";
 
 export {
   AgentsModule,
@@ -16,11 +17,14 @@ export {
   ToolsModule,
 };
 
-export function mountRequiredModules(ctx: Context): void {
-  new ModelsModule(ctx);
-  new ToolsModule(ctx);
+export function mountRequiredModules(
+  ctx: Context,
+  options: KernelRuntimeOptions,
+): void {
+  new ModelsModule(ctx, options.concurrency.maxModelCalls);
+  new ToolsModule(ctx, options.concurrency.maxToolCalls);
   new ContextModule(ctx);
   new SkillsModule(ctx);
-  new AgentsModule(ctx);
-  new SessionsModule(ctx);
+  new AgentsModule(ctx, options.timeouts);
+  new SessionsModule(ctx, undefined, options.concurrency.maxActiveTurns);
 }

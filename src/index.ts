@@ -1,4 +1,5 @@
 export { createKernel, Kernel, type KernelOptions, type KernelState } from "./kernel/kernel.js";
+export type { CallTimeouts, ConcurrencyLimits } from "./kernel/options.js";
 export {
   Agent,
   type AgentSnapshot,
@@ -18,6 +19,7 @@ export type {
   AssistantModelMessage,
   ModelAdapter,
   ModelEvent,
+  ModelExecutionContext,
   ModelMessage,
   ModelRequest,
   ModelResponse,
