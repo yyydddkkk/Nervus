@@ -103,6 +103,39 @@ describe("Capability Library", () => {
       ]);
     }
   });
+
+  it("reports missing dependencies, cycles, and Package path escape with stable codes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nervus-cap-errors-"));
+    try {
+      await capability(root, "missing", {
+        schemaVersion: 1, id: "demo/missing", version: "1.0.0", kind: "plugin",
+        entry: "./index.js", provides: [], dependencies: ["demo/absent"],
+      }, `export default () => ({ name: "missing", apply() {} });`);
+      await expect(resolveCapabilityLibrary({ roots: [root], select: ["demo/missing"] }))
+        .rejects.toMatchObject({ code: "MISSING_DEPENDENCY" });
+
+      await capability(root, "cycle-a", {
+        schemaVersion: 1, id: "demo/a", version: "1.0.0", kind: "plugin",
+        entry: "./index.js", provides: [], dependencies: ["demo/b"],
+      }, `export default () => ({ name: "a", apply() {} });`);
+      await capability(root, "cycle-b", {
+        schemaVersion: 1, id: "demo/b", version: "1.0.0", kind: "plugin",
+        entry: "./index.js", provides: [], dependencies: ["demo/a"],
+      }, `export default () => ({ name: "b", apply() {} });`);
+      await expect(resolveCapabilityLibrary({ roots: [root], select: ["demo/a"] }))
+        .rejects.toMatchObject({ code: "DEPENDENCY_CYCLE" });
+
+      await writeFile(join(root, "outside.js"), `export default () => ({ apply() {} });`, "utf8");
+      await capability(root, "escape", {
+        schemaVersion: 1, id: "demo/escape", version: "1.0.0", kind: "plugin",
+        entry: "../outside.js", provides: [], dependencies: [],
+      });
+      await expect(resolveCapabilityLibrary({ roots: [root], select: ["demo/escape"] }))
+        .rejects.toMatchObject({ code: "PATH_ESCAPE" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 async function capability(
