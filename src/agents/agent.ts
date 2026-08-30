@@ -2,10 +2,12 @@ import { Service, type Context } from "cordis";
 
 import type { ContentBlock } from "../domain/content.js";
 import type { CallTimeouts } from "../kernel/options.js";
+import type { SkillRef } from "../skills/skills.js";
 
 export interface ModelRef {
   readonly adapter: string;
   readonly model: string;
+  readonly maxOutputTokens?: number;
 }
 
 export interface TurnLimits {
@@ -22,6 +24,7 @@ export interface AgentSpec {
   readonly tools?: readonly string[];
   readonly limits?: Partial<TurnLimits>;
   readonly timeouts?: Partial<CallTimeouts>;
+  readonly skills?: readonly SkillRef[];
 }
 
 export interface AgentSnapshot {
@@ -32,6 +35,7 @@ export interface AgentSnapshot {
   readonly tools: readonly string[];
   readonly limits: TurnLimits;
   readonly timeouts: CallTimeouts;
+  readonly skills: readonly SkillRef[];
 }
 
 const DEFAULT_LIMITS: TurnLimits = {
@@ -72,7 +76,20 @@ export class AgentsModule extends Service {
       throw new Error(`unknown model adapter: ${spec.model.adapter}`);
     }
 
+    const skills = [...(spec.skills ?? [])];
+    for (const skill of skills) {
+      if (!this.ctx.skills.has(skill.id)) {
+        throw new Error(`unknown Skill: ${skill.id}`);
+      }
+    }
+
     const tools = [...(spec.tools ?? [])];
+    if (
+      skills.some((skill) => skill.mode === "available") &&
+      !tools.includes("skills/activate")
+    ) {
+      tools.push("skills/activate");
+    }
     for (const toolId of tools) {
       if (!this.ctx.tools.has(toolId)) {
         throw new Error(`unknown tool: ${toolId}`);
@@ -87,6 +104,7 @@ export class AgentsModule extends Service {
       tools: Object.freeze(tools),
       limits: Object.freeze({ ...DEFAULT_LIMITS, ...spec.limits }),
       timeouts: Object.freeze({ ...this.defaultTimeouts, ...spec.timeouts }),
+      skills: Object.freeze(skills.map((skill) => Object.freeze({ ...skill }))),
     });
     const agent = new Agent(snapshot);
     this.agents.set(spec.id, agent);

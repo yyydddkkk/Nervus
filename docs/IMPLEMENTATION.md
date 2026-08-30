@@ -37,6 +37,8 @@ Status: complete.
 
 ## M4: Context and Skills
 
+Status: complete.
+
 - Collect layered ContextBlocks and compile ModelRequestSnapshots.
 - Enforce model-aware context budgets with assembly reports.
 - Register eager and available Skills; activate available Skills for the remainder of one Turn.

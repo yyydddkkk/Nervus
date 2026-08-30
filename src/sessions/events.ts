@@ -1,10 +1,7 @@
 import type { AgentSnapshot } from "../agents/agent.js";
 import type { ContentBlock } from "../domain/content.js";
-import type {
-  AssistantModelMessage,
-  ModelRequest,
-  ToolCall,
-} from "../models/model.js";
+import type { ModelRequestSnapshot } from "../context/context.js";
+import type { AssistantModelMessage, ToolCall } from "../models/model.js";
 import type { ToolResult } from "../tools/tool.js";
 
 export type SessionEvent =
@@ -35,7 +32,7 @@ export type SessionEvent =
       readonly type: "model/call-started";
       readonly stepId: string;
       readonly modelCallId: string;
-      readonly request: ModelRequest;
+      readonly snapshot: ModelRequestSnapshot;
     }
   | {
       readonly type: "model/call-completed";
@@ -62,6 +59,11 @@ export type SessionEvent =
       readonly type: "tool/call-completed";
       readonly stepId: string;
       readonly result: ToolResult;
+    }
+  | {
+      readonly type: "skill/activated";
+      readonly turnId: string;
+      readonly skillId: string;
     }
   | {
       readonly type: "step/completed";

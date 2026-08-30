@@ -46,6 +46,13 @@ export interface ModelRequest {
   readonly tools: readonly ModelToolDefinition[];
 }
 
+export interface ModelCapabilities {
+  readonly contextWindow: number;
+  readonly maxOutputTokens: number;
+  readonly safetyMarginTokens: number;
+  readonly countTokens?: (request: ModelRequest) => number | Promise<number>;
+}
+
 export type ModelEvent =
   | { readonly type: "text-delta"; readonly delta: string }
   | { readonly type: "tool-call"; readonly call: ToolCall }
@@ -57,6 +64,7 @@ export interface ModelExecutionContext {
 
 export interface ModelAdapter {
   readonly id: string;
+  readonly capabilities?: Partial<ModelCapabilities>;
   generate(
     request: ModelRequest,
     context: ModelExecutionContext,
@@ -94,6 +102,19 @@ export class ModelsModule extends Service {
 
   has(id: string): boolean {
     return this.adapters.has(id);
+  }
+
+  capabilities(id: string): ModelCapabilities {
+    const adapter = this.adapters.get(id);
+    if (!adapter) throw new Error(`unknown model adapter: ${id}`);
+    return {
+      contextWindow: adapter.capabilities?.contextWindow ?? 128_000,
+      maxOutputTokens: adapter.capabilities?.maxOutputTokens ?? 4_096,
+      safetyMarginTokens: adapter.capabilities?.safetyMarginTokens ?? 0,
+      ...(adapter.capabilities?.countTokens
+        ? { countTokens: adapter.capabilities.countTokens }
+        : {}),
+    };
   }
 
   async generate(

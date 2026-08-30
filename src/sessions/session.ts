@@ -5,8 +5,12 @@ import { Service, type Context } from "cordis";
 import type { AgentSnapshot } from "../agents/agent.js";
 import type { ContentBlock } from "../domain/content.js";
 import { Semaphore } from "../kernel/semaphore.js";
-import type { AssistantModelMessage } from "../models/model.js";
+import type {
+  AssistantModelMessage,
+  ToolCall,
+} from "../models/model.js";
 import type { SessionEvent, SessionEventEnvelope } from "./events.js";
+import type { ToolExecutionContext, ToolResult } from "../tools/tool.js";
 import {
   MemorySessionJournal,
   type SessionJournal,
@@ -141,22 +145,23 @@ export class Session {
           index,
         });
 
-        const request = this.#ctx.context.assemble(
+        const snapshot = await this.#ctx.context.assemble(
           agent,
           await this.#journal.read(this.id),
+          turnId,
         );
         await this.#append({
           type: "model/call-started",
           stepId,
           modelCallId,
-          request,
+          snapshot,
         });
 
         let response;
         try {
           response = await this.#ctx.models.generate(
             agent.model.adapter,
-            request,
+            snapshot.request,
             { signal: controller.signal },
             agent.timeouts.modelMs,
           );
@@ -213,13 +218,18 @@ export class Session {
         );
         const results = await Promise.all(
           response.toolCalls.map((call) =>
-            this.#ctx.tools.execute(call, {
-              sessionId: this.id,
-              turnId,
-              stepId,
-              callId: call.id,
-              signal: controller.signal,
-            }, agent.timeouts.toolMs),
+            this.#executeTool(
+              agent,
+              call,
+              {
+                sessionId: this.id,
+                turnId,
+                stepId,
+                callId: call.id,
+                signal: controller.signal,
+              },
+              agent.timeouts.toolMs,
+            ),
           ),
         );
         await this.#append(
@@ -228,6 +238,20 @@ export class Session {
             stepId,
             result,
           })),
+          ...results.flatMap<SessionEvent>((result, resultIndex) => {
+            const call = response.toolCalls[resultIndex];
+            if (
+              !call ||
+              call.toolId !== "skills/activate" ||
+              result.status !== "success"
+            ) {
+              return [];
+            }
+            const skillId = call.arguments.skillId;
+            return typeof skillId === "string"
+              ? [{ type: "skill/activated", turnId, skillId }]
+              : [];
+          }),
           { type: "step/completed", turnId, stepId },
         );
       }
@@ -253,6 +277,29 @@ export class Session {
     return this.#journal.read(this.id);
   }
 
+  async #executeTool(
+    agent: AgentSnapshot,
+    call: ToolCall,
+    context: ToolExecutionContext,
+    timeoutMs: number,
+  ): Promise<ToolResult> {
+    if (!agent.tools.includes(call.toolId)) {
+      return toolError(call, `Tool is not selected by AgentSpec: ${call.toolId}`);
+    }
+    if (call.toolId === "skills/activate") {
+      const skillId = call.arguments.skillId;
+      const allowed =
+        typeof skillId === "string" &&
+        agent.skills.some(
+          (skill) => skill.id === skillId && skill.mode === "available",
+        );
+      if (!allowed) {
+        return toolError(call, `Skill is not available to this Agent: ${String(skillId)}`);
+      }
+    }
+    return this.#ctx.tools.execute(call, context, timeoutMs);
+  }
+
   async snapshot(): Promise<SessionSnapshot> {
     return projectSession(this.id, await this.#journal.read(this.id));
   }
@@ -276,6 +323,15 @@ export class Session {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function toolError(call: ToolCall, message: string): ToolResult {
+  return {
+    callId: call.id,
+    toolId: call.toolId,
+    status: "error",
+    content: [{ type: "text", text: message }],
+  };
 }
 
 export class SessionsModule extends Service {

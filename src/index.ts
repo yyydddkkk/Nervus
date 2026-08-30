@@ -1,4 +1,16 @@
 export { createKernel, Kernel, type KernelOptions, type KernelState } from "./kernel/kernel.js";
+export type {
+  AssembledContextBlock,
+  ContextAssemblyReport,
+  ContextBlock,
+  ContextBlockContent,
+  ContextContributionInput,
+  ContextContributor,
+  ContextDrop,
+  ContextLayer,
+  ContextRetention,
+  ModelRequestSnapshot,
+} from "./context/context.js";
 export type { CallTimeouts, ConcurrencyLimits } from "./kernel/options.js";
 export {
   Agent,
@@ -18,6 +30,7 @@ export type {
 export type {
   AssistantModelMessage,
   ModelAdapter,
+  ModelCapabilities,
   ModelEvent,
   ModelExecutionContext,
   ModelMessage,
@@ -58,6 +71,11 @@ export type {
   ToolExecutionResult,
   ToolResult,
 } from "./tools/tool.js";
+export type {
+  SkillDefinition,
+  SkillRef,
+  SkillResource,
+} from "./skills/skills.js";
 export {
   AgentsModule,
   ContextModule,
