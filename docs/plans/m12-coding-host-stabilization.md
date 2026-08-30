@@ -1,6 +1,6 @@
 # M12 evidence-driven Coding Host stabilization
 
-Status: accepted on 2026-08-30; implementation started.
+Status: implemented and verified on 2026-08-31.
 
 ## Outcome
 

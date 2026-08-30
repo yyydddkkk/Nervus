@@ -164,6 +164,7 @@ async function runInput(
             type: "text",
             text: [
               "For every coding task, inspect repository evidence before editing.",
+              "Use fs/list for directory discovery and fs/read only for regular files; never pass a directory to fs/read.",
               "Before modifying a nested file, read every nearer AGENTS.md that governs it.",
               "Keep changes within the requested scope.",
               "Run appropriate verification based on repository evidence and instructions.",

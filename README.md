@@ -99,6 +99,14 @@ pnpm smoke:deepseek:coding
 
 The acceptance receipt is recorded in [docs/evidence/deepseek-coding-host.md](./docs/evidence/deepseek-coding-host.md).
 
+Run the complete two-pass, six-task stabilization matrix with:
+
+```sh
+pnpm smoke:deepseek:stabilization
+```
+
+It covers scoped instructions, a large local edit, a cross-file change, durable resume, a seeded full-repository regression, and real DeepSeek Compaction. Sanitized evidence is recorded in [docs/evidence/m12-coding-host-stabilization.md](./docs/evidence/m12-coding-host-stabilization.md).
+
 ## MCP Adapter
 
 Mount an MCP server as a Cordis Plugin. Remote Tools become Nervus Tools, Resources become read-only Tools, and Prompts become parameterized Tools plus discoverable Skills.

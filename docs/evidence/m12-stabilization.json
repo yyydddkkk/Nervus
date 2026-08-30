@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "model": "deepseek-v4-flash",
+  "passes": {
+    "diagnostic": [
+      {
+        "id": "scoped-discovery",
+        "pass": "diagnostic",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "src/value.js"
+        ],
+        "metrics": {
+          "stepCount": 7,
+          "toolCallCount": 13,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 7,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 10876,
+            "outputTokens": 874,
+            "totalTokens": 11750
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "directory-discovery": 1,
+            "file-mutation": 1,
+            "git-review": 2,
+            "verification": 1
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "large-local-edit",
+        "pass": "diagnostic",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "src/catalog.js"
+        ],
+        "metrics": {
+          "stepCount": 7,
+          "toolCallCount": 12,
+          "toolErrorCount": 1,
+          "modelAttemptCount": 7,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 20443,
+            "outputTokens": 2866,
+            "totalTokens": 23309
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "verification": 2,
+            "git-review": 2
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "cross-file-change",
+        "pass": "diagnostic",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "src/consumer.js",
+          "src/definition.js"
+        ],
+        "metrics": {
+          "stepCount": 8,
+          "toolCallCount": 14,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 8,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 13369,
+            "outputTokens": 1119,
+            "totalTokens": 14488
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "git-review": 2,
+            "verification": 1,
+            "content-search": 1
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "resume-correction",
+        "pass": "diagnostic",
+        "turns": 2,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "result.txt"
+        ],
+        "metrics": {
+          "stepCount": 9,
+          "toolCallCount": 9,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 9,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 8804,
+            "outputTokens": 978,
+            "totalTokens": 9782
+          },
+          "repeatedReads": [
+            "result.txt"
+          ],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "git-review": 3
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "nervus-seeded-regression",
+        "pass": "diagnostic",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [],
+        "metrics": {
+          "stepCount": 15,
+          "toolCallCount": 25,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 15,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 129112,
+            "outputTokens": 6950,
+            "totalTokens": 136062
+          },
+          "repeatedReads": [
+            "src/tools/local.ts"
+          ],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "git-review": 8,
+            "other": 2,
+            "verification": 2
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "nervus-compaction",
+        "pass": "diagnostic",
+        "turns": 2,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "M12_NOTE.md"
+        ],
+        "metrics": {
+          "stepCount": 7,
+          "toolCallCount": 8,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 7,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 18146,
+            "outputTokens": 3226,
+            "totalTokens": 21372
+          },
+          "repeatedReads": [
+            "M12_NOTE.md"
+          ],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "git-review": 1,
+            "other": 1
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 1
+      }
+    ],
+    "final": [
+      {
+        "id": "scoped-discovery",
+        "pass": "final",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "src/value.js"
+        ],
+        "metrics": {
+          "stepCount": 7,
+          "toolCallCount": 12,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 7,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 10550,
+            "outputTokens": 858,
+            "totalTokens": 11408
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "directory-discovery": 1,
+            "verification": 1,
+            "git-review": 1
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "large-local-edit",
+        "pass": "final",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "src/catalog.js"
+        ],
+        "metrics": {
+          "stepCount": 8,
+          "toolCallCount": 12,
+          "toolErrorCount": 1,
+          "modelAttemptCount": 8,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 28013,
+            "outputTokens": 3501,
+            "totalTokens": 31514
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "git-review": 2,
+            "verification": 2
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "cross-file-change",
+        "pass": "final",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "src/consumer.js",
+          "src/definition.js"
+        ],
+        "metrics": {
+          "stepCount": 7,
+          "toolCallCount": 14,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 7,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 12185,
+            "outputTokens": 1140,
+            "totalTokens": 13325
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "content-search": 2,
+            "verification": 1,
+            "git-review": 1
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "resume-correction",
+        "pass": "final",
+        "turns": 2,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "result.txt"
+        ],
+        "metrics": {
+          "stepCount": 9,
+          "toolCallCount": 6,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 9,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 8389,
+            "outputTokens": 791,
+            "totalTokens": 9180
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "git-review": 3
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "nervus-seeded-regression",
+        "pass": "final",
+        "turns": 1,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [],
+        "metrics": {
+          "stepCount": 9,
+          "toolCallCount": 15,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 9,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 70882,
+            "outputTokens": 5458,
+            "totalTokens": 76340
+          },
+          "repeatedReads": [],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "git-review": 2,
+            "verification": 2
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 0
+      },
+      {
+        "id": "nervus-compaction",
+        "pass": "final",
+        "turns": 2,
+        "completed": true,
+        "verified": true,
+        "changedFiles": [
+          "M12_NOTE.md"
+        ],
+        "metrics": {
+          "stepCount": 6,
+          "toolCallCount": 8,
+          "toolErrorCount": 0,
+          "modelAttemptCount": 6,
+          "modelRetryCount": 0,
+          "usage": {
+            "inputTokens": 14219,
+            "outputTokens": 1859,
+            "totalTokens": 16078
+          },
+          "repeatedReads": [
+            "M12_NOTE.md"
+          ],
+          "directoryReadErrorCount": 0,
+          "shellPurposes": {
+            "directory-discovery": 1,
+            "git-review": 2
+          }
+        },
+        "instructionCompliant": true,
+        "compactionCount": 1
+      }
+    ]
+  }
+}

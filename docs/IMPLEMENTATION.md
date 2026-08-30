@@ -125,7 +125,7 @@ Status: complete.
 
 ## M12: Evidence-driven Coding Host stabilization
 
-Status: in progress.
+Status: complete.
 
 Detailed blueprint: [plans/m12-coding-host-stabilization.md](./plans/m12-coding-host-stabilization.md).
 

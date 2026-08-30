@@ -70,6 +70,7 @@ describe("Reference Coding Host", () => {
           .map((block) => (block.type === "text" ? block.text : ""))
           .join("\n");
         expect(instructions).toContain("inspect repository evidence");
+        expect(instructions).toContain("never pass a directory to fs/read");
         expect(instructions).toContain("Always mention the fixture rule.");
         expect(request.messages.at(-1)).toMatchObject({
           role: "user",

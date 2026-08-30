@@ -2,7 +2,7 @@
 
 Audit date: 2026-08-31.
 
-Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0–M11 plus M13–M14 [implementation milestones](./IMPLEMENTATION.md). M12 remains explicitly in progress.
+Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0–M14 [implementation milestones](./IMPLEMENTATION.md), with intentionally deferred items listed below.
 
 ## Milestone evidence
 
@@ -20,6 +20,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0
 | M9 MCP Adapter | Complete | `src/mcp/mcp.ts`, `tests/mcp.test.ts`, and `docs/evidence/mcp-adapter.md` prove official SDK v2 discovery, Tool/Resource/Prompt mapping, Agent invocation, and lifecycle ownership. |
 | M10 Automatic history Compaction | Complete | `src/context/compactor.ts`, `src/context/context.ts`, `tests/compaction.test.ts`, and `docs/evidence/automatic-compaction.md` prove pre-drop detection, durable summaries, restart reuse, model-attempt accounting, and explicit failure. |
 | M11 Reference Coding Host | Complete | `apps/coding-agent`, `tests/coding-host.test.ts`, `examples/deepseek-coding-host.ts`, and `docs/evidence/deepseek-coding-host.md` prove package-root integration, run/resume, external state partitioning, JSON output, scoped repository instructions, real edits, independent verification, and two live DeepSeek tasks. |
+| M12 Coding Host stabilization | Complete | `fs/list`, `apps/coding-agent/src/metrics.ts`, `examples/deepseek-coding-stabilization.ts`, `docs/evidence/m12-stabilization.json`, and `docs/evidence/m12-coding-host-stabilization.md` prove a two-pass six-task matrix, evidence-gated Prompt adjustment, zero final directory errors, full-repository repair, resume, and real Compaction. |
 | M13 Capability Library | Complete | `packages/capability-library`, `capabilities/filesystem`, `tests/capability-library.test.ts`, and `docs/evidence/capability-library.md` prove strict manifests, explicit resolution, Bundle/dependency ordering, configuration, path/error contracts, stable Resolution, and reuse by both Hosts. |
 | M14 Profile/YAML | Complete | `packages/profile`, both Host `--profile` paths, `tests/profile-loader.test.ts`, Host integration tests, and `docs/evidence/profile-yaml.md` prove strict YAML, inheritance/overlay semantics, runtime/env references, secret redaction, Resolution composition, and startup-only assembly. |
 
