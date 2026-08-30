@@ -17,14 +17,18 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json",
+    "build": "pnpm build:kernel && pnpm build:coding-host",
+    "build:kernel": "tsc -p tsconfig.build.json",
+    "build:coding-host": "pnpm --dir apps/coding-agent build",
+    "typecheck": "tsc -p tsconfig.json && pnpm --dir apps/coding-agent typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "smoke:openai": "node --env-file=.env --import tsx examples/openai-compatible.ts",
     "smoke:deepseek:tools": "node --env-file=.env --import tsx examples/deepseek-tool-agent.ts",
-    "nervus:dev": "node --env-file=.env --import tsx src/cli.ts"
+    "smoke:deepseek:coding": "pnpm build:kernel && node --env-file=.env --import tsx examples/deepseek-coding-host.ts",
+    "nervus:dev": "node --env-file=.env --import tsx src/cli.ts",
+    "nervus-code:dev": "pnpm build:kernel && node --env-file=.env --import tsx apps/coding-agent/src/cli.ts"
   },
   "engines": {
     "node": ">=22"

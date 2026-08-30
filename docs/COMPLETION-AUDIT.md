@@ -2,7 +2,7 @@
 
 Audit date: 2026-08-30.
 
-Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M10 [implementation plan](./IMPLEMENTATION.md). This audit distinguishes implemented requirements from items explicitly deferred by the blueprint.
+Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M11 [implementation plan](./IMPLEMENTATION.md). This audit distinguishes implemented requirements from items explicitly deferred by the blueprint.
 
 ## Milestone evidence
 
@@ -19,6 +19,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M10 [im
 | M8 Interactive CLI host | Complete | `src/cli.ts`, `src/cli/cli.ts`, `tests/cli.test.ts`, and `docs/evidence/deepseek-cli.md` prove chat, resume, list, inspect, Ctrl-C cancellation, durable history, and live DeepSeek Tool use. |
 | M9 MCP Adapter | Complete | `src/mcp/mcp.ts`, `tests/mcp.test.ts`, and `docs/evidence/mcp-adapter.md` prove official SDK v2 discovery, Tool/Resource/Prompt mapping, Agent invocation, and lifecycle ownership. |
 | M10 Automatic history Compaction | Complete | `src/context/compactor.ts`, `src/context/context.ts`, `tests/compaction.test.ts`, and `docs/evidence/automatic-compaction.md` prove pre-drop detection, durable summaries, restart reuse, model-attempt accounting, and explicit failure. |
+| M11 Reference Coding Host | Complete | `apps/coding-agent`, `tests/coding-host.test.ts`, `examples/deepseek-coding-host.ts`, and `docs/evidence/deepseek-coding-host.md` prove package-root integration, run/resume, external state partitioning, JSON output, scoped repository instructions, real edits, independent verification, and two live DeepSeek tasks. |
 
 ## Architecture requirements
 
@@ -42,6 +43,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M10 [im
 | Reference host | The packaged `nervus` CLI provides explicit workspaces, interactive and one-shot chat, durable Session resume/list/inspect, streamed updates, Tool summaries, and cancellation. |
 | MCP | The official MCP v2 Client is isolated behind a Cordis Plugin. stdio, Streamable HTTP, and connected-Client entry points map server capabilities into existing Tool, Skill, and Context seams. |
 | Compaction | Context reports `needsCompaction`; the Agent Loop durably runs a model-backed summary call, records `history/compacted`, and retries assembly from the summary plus later messages without deleting source events. |
+| Coding Host | The private `@nervus/coding-agent` workspace package exposes `nervus-code` and `runCodingCli`, imports Nervus only from its package root, stores Journals outside target repositories, and validates the existing Kernel through real coding workflows. |
 
 ## Kernel invariant evidence
 
@@ -58,7 +60,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M10 [im
 
 ## Explicitly deferred
 
-These are not missing from M0–M10; the accepted blueprint explicitly defers them:
+These are not missing from M0–M11; the accepted blueprint explicitly defers them:
 
 - Concrete Memory plugins.
 - YAML loading, overlays, HMR, UI, and distributed execution.

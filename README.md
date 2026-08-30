@@ -2,7 +2,7 @@
 
 Nervus is an embeddable TypeScript semantic kernel for building pluggable, model-driven agents on top of Cordis.
 
-The M0–M10 kernel roadmap is implemented, with concrete Memory plugins intentionally deferred. Nervus remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
+The M0–M11 roadmap is implemented, with concrete Memory plugins intentionally deferred. Nervus remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
 
 ## Development
 
@@ -20,7 +20,7 @@ pnpm build
 
 - Cordis-backed Kernel lifecycle with typed Agent/Session facade.
 - Versioned AgentSpec snapshots, FIFO Inputs, bounded Turns and parallel Tools.
-- Memory and atomic JSONL SessionJournals with replay and interrupted recovery.
+- In-memory and atomic JSONL SessionJournals with replay and interrupted recovery.
 - Layered ContextBlocks, model-aware budgets, truncation reports and Skills.
 - Automatic durable history Compaction before prior Turns would be discarded.
 - Scripted and OpenAI-compatible streaming Model Adapters.
@@ -49,6 +49,7 @@ OPENAI_API_KEY=your_deepseek_api_key
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
 OPENAI_INSTRUCTION_ROLE=system
+OPENAI_COMPATIBILITY=deepseek
 ```
 
 Use `deepseek-v4-flash` for a fast smoke test or change `OPENAI_MODEL` to `deepseek-v4-pro`. The Adapter keeps `developer` as its default for OpenAI and only switches roles when `OPENAI_INSTRUCTION_ROLE=system` is configured.
@@ -78,6 +79,25 @@ pnpm nervus:dev -- sessions resume my-project --workspace ./my-project
 ```
 
 The CLI streams model text, reports reasoning and Tool activity, persists JSONL under `<workspace>/.nervus/sessions`, and cancels the active Turn on Ctrl-C. Its live DeepSeek receipt is recorded in [docs/evidence/deepseek-cli.md](./docs/evidence/deepseek-cli.md).
+
+## Reference Coding Host
+
+`nervus-code` is an independent private Host package under `apps/coding-agent`. It consumes Nervus through package-root exports and runs one durable coding Session per task:
+
+```sh
+pnpm nervus-code:dev -- run --workspace ./my-project "Fix the failing tests"
+pnpm nervus-code:dev -- resume <session-id> --workspace ./my-project "Apply the follow-up"
+```
+
+The Host modifies only the explicit workspace, loads its root `AGENTS.md` as required Context, uses an eager Coding Skill, and exposes `fs/read`, `fs/write`, and `shell/run`. Journals default to the platform user-state directory partitioned by canonical workspace path, keeping runtime state outside the repository. Use `--state-dir` for deterministic storage and `--json` for one machine-readable final record.
+
+Run the two disposable live DeepSeek coding acceptances with:
+
+```sh
+pnpm smoke:deepseek:coding
+```
+
+The acceptance receipt is recorded in [docs/evidence/deepseek-coding-host.md](./docs/evidence/deepseek-coding-host.md).
 
 ## MCP Adapter
 

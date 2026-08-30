@@ -40,6 +40,12 @@ importers:
         specifier: 4.5.4
         version: 4.5.4
 
+  apps/coding-agent:
+    dependencies:
+      nervus:
+        specifier: workspace:*
+        version: link:../..
+
 packages:
 
   '@babel/helper-string-parser@7.29.7':

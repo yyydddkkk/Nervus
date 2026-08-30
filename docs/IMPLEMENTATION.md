@@ -98,6 +98,31 @@ Status: complete.
 - Reassemble from the latest applicable summary plus subsequent messages.
 - Preserve compacted history across Journal restart and fail explicitly on Compaction errors.
 
+## M11: Reference Coding Host
+
+Status: complete.
+
+- Build an independent Host under `apps/coding-agent` that consumes Nervus through public exports.
+- Complete the coding loop: inspect a repository, edit files, run verification, and report results without committing or publishing external changes.
+- Default to the existing root-scoped file and Shell Tools. MCP remains an optional Plugin injection, not an M11 dependency or acceptance requirement.
+- Assemble the Host in TypeScript with environment variables and CLI flags for runtime configuration; defer a declarative YAML format.
+- Verify behavior with deterministic fixture repositories and repeatable live DeepSeek coding tasks.
+- Require an explicit workspace and modify it in place while preserving the existing root-scoped Tool boundary.
+- Map one coding task to one durable Session, with `run` for the initial Input and `resume` for explicit follow-up Inputs.
+- Contribute the workspace root `AGENTS.md` automatically and require discovery of nearer scoped instructions before modifying nested files.
+- Keep model configuration OpenAI-compatible and provider-neutral, with DeepSeek as the live acceptance baseline.
+- Ship the independent `nervus-code` executable from `apps/coding-agent`.
+- Store Journals in a user-level state directory partitioned by workspace, with an explicit `--state-dir` override.
+- Stream human-readable model and Tool activity by default and offer `--json` for a machine-readable final Turn/Session summary.
+- Preserve the Kernel's existing completion rule: a final model response without ToolCalls completes the Turn.
+- Require the Agent to inspect repository status/diff and run appropriate verification through recorded Tools; fixture tests independently inspect the resulting workspace.
+- Keep the Host on public Nervus interfaces. Any missing general capability requires a reproducible failing scenario before changing the Kernel.
+- Partition the user-level state directory by a hash of the canonical workspace path; moving a workspace creates a new default partition, while `--state-dir` enables explicit recovery or migration.
+- Generate and print a readable Session ID for `run`, with an optional explicit `--session`; `resume` always targets an existing ID.
+- Capture the root `AGENTS.md` as required Context for a Turn. The Coding Skill requires reading nearer scoped instructions before nested edits; deterministic tests verify this behavior without adding policy to file Tools.
+- Export an injectable `runCodingCli` seam for deterministic Host tests without creating a second general-purpose SDK.
+- Run two live DeepSeek acceptances in disposable fixtures: a single-file defect repair and a scoped multi-file change.
+
 ## Deferred
 
 - Memory plugins.

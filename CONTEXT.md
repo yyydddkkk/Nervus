@@ -8,6 +8,10 @@ Nervus is an embeddable semantic kernel for model-driven agents. This glossary d
 The runtime that resolves Agents, accepts Inputs, and coordinates their recorded execution.
 _Avoid_: Harness, platform, application
 
+**Host**:
+An application that embeds a Kernel, registers its Adapters and Plugins, accepts external input, and presents execution results. A Host is not part of the Agent's reasoning loop.
+_Avoid_: Kernel, Agent
+
 **AgentSpec**:
 A serializable declaration of an Agent's model, instructions, Tools, Skills, limits, and options.
 _Avoid_: Agent config, agent definition
@@ -71,6 +75,10 @@ _Avoid_: Workflow plugin, executable skill
 **Compaction**:
 A recorded summary that represents a specified range of older Session history without deleting its original events.
 _Avoid_: Truncation, deletion
+
+**Memory**:
+Durable knowledge retrieved across Sessions and contributed to a Turn as relevant Context. Memory does not include a Session's event history, a SessionJournal implementation, or Compaction.
+_Avoid_: Session history, Journal, Compaction
 
 ## Facts
 

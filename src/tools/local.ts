@@ -30,9 +30,12 @@ export function localToolsPlugin(options: LocalToolsOptions): Plugin.Object<void
           required: ["path"],
           additionalProperties: false,
         },
-        async execute(input) {
+        async execute(input, context) {
           const { path } = input as { path: string };
           const target = resolveInsideRoot(root, path);
+          context.reportProgress([
+            { type: "text", text: `reading ${path}` },
+          ]);
           return {
             status: "success",
             content: [{ type: "text", text: await readFile(target, "utf8") }],
@@ -52,9 +55,12 @@ export function localToolsPlugin(options: LocalToolsOptions): Plugin.Object<void
           required: ["path", "content"],
           additionalProperties: false,
         },
-        async execute(input) {
+        async execute(input, context) {
           const { path, content } = input as { path: string; content: string };
           const target = resolveInsideRoot(root, path);
+          context.reportProgress([
+            { type: "text", text: `writing ${path}` },
+          ]);
           await mkdir(dirname(target), { recursive: true });
           await writeFile(target, content, "utf8");
           return {
@@ -90,6 +96,9 @@ export function localToolsPlugin(options: LocalToolsOptions): Plugin.Object<void
             cwd?: string;
           };
           const resolvedCwd = resolveInsideRoot(root, cwd);
+          context.reportProgress([
+            { type: "text", text: `running shell command in ${cwd}` },
+          ]);
           const result = await runShell({
             shell,
             command,

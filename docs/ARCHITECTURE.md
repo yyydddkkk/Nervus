@@ -20,7 +20,7 @@ The first release targets Node.js 22+, ESM, TypeScript, one process, and one mac
 
 ### Engineering and host conventions
 
-- The repository remains one private npm package during initial development. Source directories are modules, not independently versioned packages; a package is split only after it has a real independent release or dependency lifecycle.
+- The repository is a pnpm workspace with the Kernel at the root and private reference Hosts under `apps/`. A Host package exists to prove package-root integration and may not import Kernel internals; this is packaging isolation, not an independent release promise. See ADR-0005.
 - Hosts mount Cordis Plugins explicitly from TypeScript during `createKernel()` bootstrap. The Kernel does not scan directories or let AgentSpec load packages. YAML loading and HMR remain optional future host features.
 - Library Adapters never choose hidden filesystem locations. In particular, a JSONL SessionJournal requires an explicit directory; a reference CLI may define its own documented default.
 - The initial users are the project maintainers, so rapid experiments and breaking changes are allowed while the package remains private. Correct semantics and readable interfaces still take precedence over short-lived convenience.
@@ -61,6 +61,7 @@ Models
 Tools
 Context
 Skills
+HistoryCompactor
 ```
 
 Their responsibilities are:
@@ -484,6 +485,7 @@ The first usable release includes:
 - Replay and interrupted recovery.
 - MCP v2 Adapter and interactive CLI host.
 - Automatic durable history Compaction.
+- Private Reference Coding Host with deterministic and live DeepSeek acceptance.
 
 Explicitly deferred:
 
