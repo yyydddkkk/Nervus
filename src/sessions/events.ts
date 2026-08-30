@@ -1,7 +1,11 @@
 import type { AgentSnapshot } from "../agents/agent.js";
 import type { ContentBlock } from "../domain/content.js";
 import type { ModelRequestSnapshot } from "../context/context.js";
-import type { AssistantModelMessage, ToolCall } from "../models/model.js";
+import type {
+  AssistantModelMessage,
+  ModelUsage,
+  ToolCall,
+} from "../models/model.js";
 import type { ToolResult } from "../tools/tool.js";
 
 export type SessionEvent =
@@ -35,15 +39,34 @@ export type SessionEvent =
       readonly snapshot: ModelRequestSnapshot;
     }
   | {
+      readonly type: "model/attempt-started";
+      readonly modelCallId: string;
+      readonly attempt: number;
+    }
+  | {
+      readonly type: "model/attempt-failed";
+      readonly modelCallId: string;
+      readonly attempt: number;
+      readonly error: string;
+      readonly retryable: boolean;
+    }
+  | {
       readonly type: "model/call-completed";
       readonly modelCallId: string;
       readonly content: readonly ContentBlock[];
       readonly toolCalls: readonly ToolCall[];
+      readonly reasoning: string;
+      readonly usage?: ModelUsage;
     }
   | {
       readonly type: "model/call-failed";
       readonly modelCallId: string;
       readonly error: string;
+    }
+  | {
+      readonly type: "model/call-interrupted";
+      readonly modelCallId: string;
+      readonly reason: string;
     }
   | {
       readonly type: "assistant/message";
@@ -59,6 +82,24 @@ export type SessionEvent =
       readonly type: "tool/call-completed";
       readonly stepId: string;
       readonly result: ToolResult;
+    }
+  | {
+      readonly type: "tool/call-cancelled";
+      readonly stepId: string;
+      readonly callId: string;
+      readonly reason: string;
+    }
+  | {
+      readonly type: "tool/call-failed";
+      readonly stepId: string;
+      readonly callId: string;
+      readonly error: string;
+    }
+  | {
+      readonly type: "tool/call-interrupted";
+      readonly stepId: string;
+      readonly callId: string;
+      readonly reason: string;
     }
   | {
       readonly type: "skill/activated";

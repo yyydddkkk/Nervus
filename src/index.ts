@@ -1,9 +1,14 @@
 export { createKernel, Kernel, type KernelOptions, type KernelState } from "./kernel/kernel.js";
+export { KernelError, type KernelErrorCode } from "./kernel/error.js";
 export {
   OpenAICompatibleChatAdapter,
   OpenAICompatibleError,
   type OpenAICompatibleChatAdapterOptions,
 } from "./adapters/openai-compatible.js";
+export {
+  ScriptedModelAdapter,
+  type ScriptedModelAdapterOptions,
+} from "./adapters/scripted.js";
 export type {
   AssembledContextBlock,
   ContextAssemblyReport,
@@ -11,12 +16,19 @@ export type {
   ContextBlockContent,
   ContextContributionInput,
   ContextContributor,
+  ContextContributorLease,
+  ContextContributorRef,
   ContextDrop,
   ContextLayer,
   ContextRetention,
+  ContextTruncation,
   ModelRequestSnapshot,
 } from "./context/context.js";
-export type { CallTimeouts, ConcurrencyLimits } from "./kernel/options.js";
+export type {
+  CallTimeouts,
+  ConcurrencyLimits,
+  ModelRetryOptions,
+} from "./kernel/options.js";
 export {
   Agent,
   type AgentSnapshot,
@@ -36,6 +48,10 @@ export type {
   AssistantModelMessage,
   ModelAdapter,
   ModelCapabilities,
+  ModelCallOptions,
+  ModelDeltaUpdate,
+  ModelUsage,
+  ModelUsageUpdate,
   ModelEvent,
   ModelExecutionContext,
   ModelMessage,
@@ -74,6 +90,8 @@ export type {
   ToolDefinition,
   ToolExecutionContext,
   ToolExecutionResult,
+  ToolInvocationContext,
+  ToolProgress,
   ToolResult,
 } from "./tools/tool.js";
 export {

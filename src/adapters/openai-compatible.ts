@@ -108,6 +108,14 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
       }
 
       const chunk = JSON.parse(data) as ChatCompletionChunk;
+      if (chunk.usage) {
+        yield {
+          type: "usage",
+          inputTokens: chunk.usage.prompt_tokens,
+          outputTokens: chunk.usage.completion_tokens,
+          totalTokens: chunk.usage.total_tokens,
+        };
+      }
       const delta = chunk.choices?.[0]?.delta;
       if (delta?.content) yield { type: "text-delta", delta: delta.content };
       for (const partial of delta?.tool_calls ?? []) {
@@ -139,6 +147,11 @@ interface PendingToolCall {
 }
 
 interface ChatCompletionChunk {
+  readonly usage?: {
+    readonly prompt_tokens: number;
+    readonly completion_tokens: number;
+    readonly total_tokens: number;
+  } | null;
   readonly choices?: readonly {
     readonly delta?: {
       readonly content?: string | null;

@@ -148,6 +148,21 @@ describe("durable Sessions", () => {
           content: activeContent,
         },
         {
+          type: "step/started",
+          turnId: "interrupted-turn",
+          stepId: "interrupted-step",
+          index: 1,
+        },
+        {
+          type: "tool/call-started",
+          stepId: "interrupted-step",
+          call: {
+            id: "interrupted-tool",
+            toolId: "historical/tool",
+            arguments: {},
+          },
+        },
+        {
           type: "input/accepted",
           inputId: "queued-input",
           content: queuedContent,
@@ -166,6 +181,13 @@ describe("durable Sessions", () => {
           (event) => event.type === "turn/started",
         ),
       ).toHaveLength(1);
+      expect(
+        (await session.events()).filter(
+          (event) => event.type === "tool/call-interrupted",
+        ),
+      ).toMatchObject([
+        { payload: { callId: "interrupted-tool" } },
+      ]);
 
       await expect(session.resumePendingInputs()).resolves.toMatchObject([
         {
@@ -229,6 +251,95 @@ describe("durable Sessions", () => {
         ),
       ).toBe(false);
     } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("marks an unterminated ModelCall interrupted during recovery", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "nervus-model-recovery-"));
+    const journal = new JsonlSessionJournal({ directory });
+    const model: ModelAdapter = {
+      id: "scripted/model-recovery",
+      async *generate() {
+        yield { type: "response-completed" };
+      },
+    };
+    const kernel = await createKernel({
+      journal,
+      plugins: [modelPlugin(model)],
+    });
+
+    try {
+      const agent = await kernel.createAgent({
+        id: "model-recovery-agent",
+        model: { adapter: model.id, model: "scripted" },
+      });
+      const snapshot = agent.createSnapshot();
+      await journal.append("model-recovery-session", 0, [
+        { type: "session/created", agentId: agent.id },
+        {
+          type: "input/accepted",
+          inputId: "model-recovery-input",
+          content: [{ type: "text", text: "recover model" }],
+        },
+        {
+          type: "turn/started",
+          turnId: "model-recovery-turn",
+          inputId: "model-recovery-input",
+          agent: snapshot,
+        },
+        {
+          type: "user/message",
+          turnId: "model-recovery-turn",
+          content: [{ type: "text", text: "recover model" }],
+        },
+        {
+          type: "step/started",
+          turnId: "model-recovery-turn",
+          stepId: "model-recovery-step",
+          index: 1,
+        },
+        {
+          type: "model/call-started",
+          stepId: "model-recovery-step",
+          modelCallId: "interrupted-model-call",
+          snapshot: {
+            request: {
+              model: "scripted",
+              instructions: [],
+              messages: [
+                {
+                  role: "user",
+                  content: [{ type: "text", text: "recover model" }],
+                },
+              ],
+              tools: [],
+            },
+            blocks: [],
+            report: {
+              inputBudget: 100,
+              estimatedInputTokens: 3,
+              includedBlockIds: [],
+              dropped: [],
+              truncated: [],
+            },
+          },
+        },
+      ]);
+
+      const session = await kernel.openSession({ id: "model-recovery-session" });
+      expect(
+        (await session.events()).filter(
+          (event) => event.type === "model/call-interrupted",
+        ),
+      ).toMatchObject([
+        { payload: { modelCallId: "interrupted-model-call" } },
+      ]);
+      expect(await session.snapshot()).toMatchObject({
+        latestTurn: { status: "interrupted" },
+      });
+    } finally {
+      await kernel.dispose();
       await rm(directory, { recursive: true, force: true });
     }
   });

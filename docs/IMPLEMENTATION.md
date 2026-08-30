@@ -53,6 +53,8 @@ Status: complete.
 
 ## M6: Lifecycle hardening
 
+Status: complete.
+
 - Add centralized model retry and attempt records.
 - Drain registration leases during plugin unload.
 - Enforce global concurrency and immediate-cancel Kernel disposal.

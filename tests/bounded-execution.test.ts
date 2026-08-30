@@ -604,4 +604,144 @@ describe("bounded execution", () => {
       await kernel.dispose();
     }
   });
+
+  it("bounds ModelCalls independently from active Turns", async () => {
+    const firstStarted = deferred<void>();
+    const secondStarted = deferred<void>();
+    const releaseFirst = deferred<void>();
+    const releaseSecond = deferred<void>();
+    let calls = 0;
+    const model: ModelAdapter = {
+      id: "scripted/model-concurrency",
+      async *generate() {
+        calls += 1;
+        if (calls === 1) {
+          firstStarted.resolve();
+          await releaseFirst.promise;
+        } else {
+          secondStarted.resolve();
+          await releaseSecond.promise;
+        }
+        yield { type: "text-delta", delta: "done" };
+        yield { type: "response-completed" };
+      },
+    };
+    const plugin: Plugin.Object<void> = {
+      name: "test/model-concurrency",
+      inject: ["models"],
+      apply(ctx) {
+        ctx.models.register(model);
+      },
+    };
+    const kernel = await createKernel({
+      plugins: [plugin],
+      concurrency: {
+        maxActiveTurns: 2,
+        maxModelCalls: 1,
+        maxToolCalls: 16,
+      },
+    });
+
+    try {
+      const agent = await kernel.createAgent({
+        id: "model-concurrency-agent",
+        model: { adapter: model.id, model: "scripted" },
+      });
+      const firstSession = await kernel.createSession({
+        id: "model-concurrency-1",
+        agentId: agent.id,
+      });
+      const secondSession = await kernel.createSession({
+        id: "model-concurrency-2",
+        agentId: agent.id,
+      });
+      const first = firstSession.send({ content: [{ type: "text", text: "1" }] });
+      await firstStarted.promise;
+      const second = secondSession.send({ content: [{ type: "text", text: "2" }] });
+      await waitFor(async () => (await secondSession.snapshot()).turnCount === 1);
+      expect(calls).toBe(1);
+      releaseFirst.resolve();
+      await secondStarted.promise;
+      releaseSecond.resolve();
+      await Promise.all([first, second]);
+    } finally {
+      await kernel.dispose();
+    }
+  });
+
+  it("bounds ToolCalls independently inside one Step", async () => {
+    const firstStarted = deferred<void>();
+    const secondStarted = deferred<void>();
+    const releaseFirst = deferred<void>();
+    let starts = 0;
+    const model: ModelAdapter = {
+      id: "scripted/tool-concurrency",
+      async *generate(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool-call",
+            call: { id: "tool-limit-1", toolId: "test/limited-tool", arguments: {} },
+          };
+          yield {
+            type: "tool-call",
+            call: { id: "tool-limit-2", toolId: "test/limited-tool", arguments: {} },
+          };
+        } else {
+          yield { type: "text-delta", delta: "tools done" };
+        }
+        yield { type: "response-completed" };
+      },
+    };
+    const tool: ToolDefinition = {
+      id: "test/limited-tool",
+      description: "Observe Tool concurrency.",
+      inputSchema: { type: "object" },
+      async execute() {
+        starts += 1;
+        if (starts === 1) {
+          firstStarted.resolve();
+          await releaseFirst.promise;
+        } else {
+          secondStarted.resolve();
+        }
+        return { status: "success", content: [] };
+      },
+    };
+    const plugin: Plugin.Object<void> = {
+      name: "test/tool-concurrency",
+      inject: ["models", "tools"],
+      apply(ctx) {
+        ctx.models.register(model);
+        ctx.tools.register(tool);
+      },
+    };
+    const kernel = await createKernel({
+      plugins: [plugin],
+      concurrency: {
+        maxActiveTurns: 2,
+        maxModelCalls: 2,
+        maxToolCalls: 1,
+      },
+    });
+
+    try {
+      const agent = await kernel.createAgent({
+        id: "tool-concurrency-agent",
+        model: { adapter: model.id, model: "scripted" },
+        tools: [tool.id],
+      });
+      const session = await kernel.createSession({
+        id: "tool-concurrency-session",
+        agentId: agent.id,
+      });
+      const turn = session.send({ content: [{ type: "text", text: "tools" }] });
+      await firstStarted.promise;
+      expect(starts).toBe(1);
+      releaseFirst.resolve();
+      await secondStarted.promise;
+      await expect(turn).resolves.toMatchObject({ status: "completed" });
+    } finally {
+      await kernel.dispose();
+    }
+  });
 });

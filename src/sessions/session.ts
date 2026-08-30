@@ -5,12 +5,13 @@ import { Service, type Context } from "cordis";
 import type { AgentSnapshot } from "../agents/agent.js";
 import type { ContentBlock } from "../domain/content.js";
 import { Semaphore } from "../kernel/semaphore.js";
+import { KernelError } from "../kernel/error.js";
 import type {
   AssistantModelMessage,
   ToolCall,
 } from "../models/model.js";
 import type { SessionEvent, SessionEventEnvelope } from "./events.js";
-import type { ToolExecutionContext, ToolResult } from "../tools/tool.js";
+import type { ToolInvocationContext, ToolResult } from "../tools/tool.js";
 import {
   MemorySessionJournal,
   type SessionJournal,
@@ -50,6 +51,7 @@ export class Session {
   #appendTail: Promise<void> = Promise.resolve();
   #turnTail: Promise<void> = Promise.resolve();
   readonly #scheduledInputs = new Map<string, Promise<TurnResult>>();
+  #stopping = false;
   #activeTurn: { readonly id: string; readonly controller: AbortController } | null =
     null;
 
@@ -69,6 +71,12 @@ export class Session {
   }
 
   async send(input: SessionInput): Promise<TurnResult> {
+    if (this.#stopping) {
+      throw new KernelError(
+        "KERNEL_DISPOSING",
+        "Session cannot accept Input while the Kernel is disposing",
+      );
+    }
     const inputId = randomUUID();
     const accepted = this.#append({
       type: "input/accepted",
@@ -103,6 +111,12 @@ export class Session {
     const turn = (async () => {
       await accepted;
       await previousTurn;
+      if (this.#stopping) {
+        throw new KernelError(
+          "KERNEL_DISPOSING",
+          "Queued Input will remain durable while the Kernel is disposing",
+        );
+      }
       return this.#execute(inputId, input);
     })();
     this.#turnTail = turn.then(
@@ -110,7 +124,8 @@ export class Session {
       () => undefined,
     );
     this.#scheduledInputs.set(inputId, turn);
-    void turn.finally(() => this.#scheduledInputs.delete(inputId));
+    const cleanup = () => this.#scheduledInputs.delete(inputId);
+    void turn.then(cleanup, cleanup);
     return turn;
   }
 
@@ -120,22 +135,48 @@ export class Session {
     return true;
   }
 
+  async shutdown(reason = "Kernel is disposing"): Promise<void> {
+    this.#stopping = true;
+    this.cancelActiveTurn(reason);
+    await this.#turnTail;
+    await this.#appendTail;
+  }
+
   async #execute(inputId: string, input: SessionInput): Promise<TurnResult> {
     const turnId = randomUUID();
     const controller = new AbortController();
     this.#activeTurn = { id: turnId, controller };
-    const agent = this.#ctx.agents.get(this.agentId).createSnapshot();
+    let agent!: AgentSnapshot;
     let releaseTurn: (() => void) | undefined;
+    const capabilityReleases: (() => void)[] = [];
 
     try {
-      releaseTurn = await this.#turns.acquire(controller.signal);
+      const contributors = this.#ctx.context.holdContributors();
+      capabilityReleases.push(contributors.release);
+      agent = this.#ctx.agents.snapshot(this.agentId, contributors.refs);
       await this.#append(
         { type: "turn/started", turnId, inputId, agent },
         { type: "user/message", turnId, content: input.content },
       );
+      capabilityReleases.push(this.#ctx.models.hold(agent.model.adapter));
+      for (const toolId of agent.tools) {
+        capabilityReleases.push(this.#ctx.tools.hold(toolId));
+      }
+      capabilityReleases.push(
+        this.#ctx.skills.hold(agent.skills.map((skill) => skill.id)),
+      );
+      releaseTurn = await this.#turns.acquire(controller.signal);
 
       let toolCallCount = 0;
+      let modelAttemptCount = 0;
       for (let index = 1; index <= agent.limits.maxSteps; index += 1) {
+        const remainingAttempts =
+          agent.limits.maxModelAttempts - modelAttemptCount;
+        if (remainingAttempts <= 0) {
+          await this.#append({ type: "turn/exhausted", turnId });
+          return { turnId, status: "exhausted", output: [] };
+        }
+
         const stepId = randomUUID();
         const modelCallId = randomUUID();
         await this.#append({
@@ -162,8 +203,32 @@ export class Session {
           response = await this.#ctx.models.generate(
             agent.model.adapter,
             snapshot.request,
-            { signal: controller.signal },
-            agent.timeouts.modelMs,
+            {
+              signal: controller.signal,
+              sessionId: this.id,
+              turnId,
+              stepId,
+              modelCallId,
+              timeoutMs: agent.timeouts.modelMs,
+              maxAttempts: remainingAttempts,
+              onAttemptStarted: async (attempt) => {
+                modelAttemptCount += 1;
+                await this.#append({
+                  type: "model/attempt-started",
+                  modelCallId,
+                  attempt,
+                });
+              },
+              onAttemptFailed: async (attempt, error, retryable) => {
+                await this.#append({
+                  type: "model/attempt-failed",
+                  modelCallId,
+                  attempt,
+                  error: formatError(error),
+                  retryable,
+                });
+              },
+            },
           );
         } catch (error) {
           await this.#append({
@@ -184,6 +249,8 @@ export class Session {
             modelCallId,
             content: response.content,
             toolCalls: response.toolCalls,
+            reasoning: response.reasoning,
+            ...(response.usage ? { usage: response.usage } : {}),
           },
           { type: "assistant/message", stepId, message: assistantMessage },
         );
@@ -216,7 +283,7 @@ export class Session {
             call,
           })),
         );
-        const results = await Promise.all(
+        const settled = await Promise.allSettled(
           response.toolCalls.map((call) =>
             this.#executeTool(
               agent,
@@ -232,28 +299,59 @@ export class Session {
             ),
           ),
         );
-        await this.#append(
-          ...results.map<SessionEvent>((result) => ({
-            type: "tool/call-completed",
-            stepId,
-            result,
-          })),
-          ...results.flatMap<SessionEvent>((result, resultIndex) => {
-            const call = response.toolCalls[resultIndex];
+        const results: ToolResult[] = [];
+        const terminalEvents: SessionEvent[] = [];
+        const activationEvents: SessionEvent[] = [];
+        let firstFailure: unknown;
+        settled.forEach((outcome, resultIndex) => {
+          const call = response.toolCalls[resultIndex];
+          if (!call) return;
+          if (outcome.status === "fulfilled") {
+            results.push(outcome.value);
+            terminalEvents.push({
+              type: "tool/call-completed",
+              stepId,
+              result: outcome.value,
+            });
             if (
-              !call ||
-              call.toolId !== "skills/activate" ||
-              result.status !== "success"
+              call.toolId === "skills/activate" &&
+              outcome.value.status === "success" &&
+              typeof call.arguments.skillId === "string"
             ) {
-              return [];
+              activationEvents.push({
+                type: "skill/activated",
+                turnId,
+                skillId: call.arguments.skillId,
+              });
             }
-            const skillId = call.arguments.skillId;
-            return typeof skillId === "string"
-              ? [{ type: "skill/activated", turnId, skillId }]
-              : [];
-          }),
-          { type: "step/completed", turnId, stepId },
+            return;
+          }
+
+          firstFailure ??= outcome.reason;
+          terminalEvents.push(
+            controller.signal.aborted
+              ? {
+                  type: "tool/call-cancelled",
+                  stepId,
+                  callId: call.id,
+                  reason: formatError(controller.signal.reason),
+                }
+              : {
+                  type: "tool/call-failed",
+                  stepId,
+                  callId: call.id,
+                  error: formatError(outcome.reason),
+                },
+          );
+        });
+        await this.#append(
+          ...terminalEvents,
+          ...activationEvents,
+          ...(firstFailure
+            ? []
+            : [{ type: "step/completed", turnId, stepId } as const]),
         );
+        if (firstFailure) throw firstFailure;
       }
 
       await this.#append({ type: "turn/exhausted", turnId });
@@ -269,6 +367,9 @@ export class Session {
       return { turnId, status: "failed", output: [] };
     } finally {
       releaseTurn?.();
+      for (const releaseCapability of capabilityReleases.reverse()) {
+        releaseCapability();
+      }
       if (this.#activeTurn?.id === turnId) this.#activeTurn = null;
     }
   }
@@ -280,7 +381,7 @@ export class Session {
   async #executeTool(
     agent: AgentSnapshot,
     call: ToolCall,
-    context: ToolExecutionContext,
+    context: ToolInvocationContext,
     timeoutMs: number,
   ): Promise<ToolResult> {
     if (!agent.tools.includes(call.toolId)) {
@@ -351,13 +452,19 @@ export class SessionsModule extends Service {
 
   async create(options: CreateSessionOptions): Promise<Session> {
     if (this.sessions.has(options.id)) {
-      throw new Error(`session is already open: ${options.id}`);
+      throw new KernelError(
+        "SESSION_CONFLICT",
+        `Session is already open: ${options.id}`,
+      );
     }
     this.ctx.agents.get(options.agentId);
 
     const existing = await this.journal.read(options.id);
     if (existing.length > 0) {
-      throw new Error(`session already exists: ${options.id}`);
+      throw new KernelError(
+        "SESSION_CONFLICT",
+        `Session already exists: ${options.id}`,
+      );
     }
 
     const created = await this.journal.append(options.id, 0, [
@@ -383,17 +490,22 @@ export class SessionsModule extends Service {
       (event) => event.payload.type === "session/created",
     );
     if (!created || created.payload.type !== "session/created") {
-      throw new Error(`session does not exist: ${options.id}`);
+      throw new KernelError(
+        "SESSION_CONFLICT",
+        `Session does not exist: ${options.id}`,
+      );
     }
     this.ctx.agents.get(created.payload.agentId);
 
     const snapshot = projectSession(options.id, events);
     if (snapshot.latestTurn?.status === "active") {
+      const reason = "Kernel restarted before execution reached a terminal event";
       await this.journal.append(options.id, events.length, [
+        ...repairInterruptedCalls(events, reason),
         {
           type: "turn/interrupted",
           turnId: snapshot.latestTurn.id,
-          reason: "Kernel restarted before the Turn reached a terminal event",
+          reason,
         },
       ]);
       events = await this.journal.read(options.id);
@@ -409,6 +521,57 @@ export class SessionsModule extends Service {
     this.sessions.set(options.id, session);
     return session;
   }
+
+  async shutdown(): Promise<void> {
+    await Promise.all(
+      [...this.sessions.values()].map((session) => session.shutdown()),
+    );
+  }
+}
+
+function repairInterruptedCalls(
+  events: readonly SessionEventEnvelope[],
+  reason: string,
+): readonly SessionEvent[] {
+  const modelCalls = new Set<string>();
+  const toolCalls = new Map<string, string>();
+  for (const envelope of events) {
+    const event = envelope.payload;
+    switch (event.type) {
+      case "model/call-started":
+        modelCalls.add(event.modelCallId);
+        break;
+      case "model/call-completed":
+      case "model/call-failed":
+      case "model/call-interrupted":
+        modelCalls.delete(event.modelCallId);
+        break;
+      case "tool/call-started":
+        toolCalls.set(event.call.id, event.stepId);
+        break;
+      case "tool/call-completed":
+        toolCalls.delete(event.result.callId);
+        break;
+      case "tool/call-cancelled":
+      case "tool/call-failed":
+      case "tool/call-interrupted":
+        toolCalls.delete(event.callId);
+        break;
+    }
+  }
+  return [
+    ...[...modelCalls].map<SessionEvent>((modelCallId) => ({
+      type: "model/call-interrupted",
+      modelCallId,
+      reason,
+    })),
+    ...[...toolCalls].map<SessionEvent>(([callId, stepId]) => ({
+      type: "tool/call-interrupted",
+      stepId,
+      callId,
+      reason,
+    })),
+  ];
 }
 
 declare module "cordis" {

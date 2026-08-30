@@ -2,6 +2,9 @@ import { Service, type Context } from "cordis";
 
 import type { ContentBlock } from "../domain/content.js";
 import { Semaphore } from "../kernel/semaphore.js";
+import type { ModelRetryOptions } from "../kernel/options.js";
+import { KernelError } from "../kernel/error.js";
+import { LeasedRegistry } from "../kernel/leased-registry.js";
 
 export interface ToolCall {
   readonly id: string;
@@ -50,12 +53,26 @@ export interface ModelCapabilities {
   readonly contextWindow: number;
   readonly maxOutputTokens: number;
   readonly safetyMarginTokens: number;
+  readonly supportsTools: boolean;
+  readonly supportsImages: boolean;
   readonly countTokens?: (request: ModelRequest) => number | Promise<number>;
 }
 
 export type ModelEvent =
   | { readonly type: "text-delta"; readonly delta: string }
+  | { readonly type: "reasoning-delta"; readonly delta: string }
   | { readonly type: "tool-call"; readonly call: ToolCall }
+  | {
+      readonly type: "usage";
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+      readonly totalTokens: number;
+    }
+  | {
+      readonly type: "response-failed";
+      readonly error: string;
+      readonly retryable: boolean;
+    }
   | { readonly type: "response-completed" };
 
 export interface ModelExecutionContext {
@@ -64,6 +81,7 @@ export interface ModelExecutionContext {
 
 export interface ModelAdapter {
   readonly id: string;
+  readonly revision?: number;
   readonly capabilities?: Partial<ModelCapabilities>;
   generate(
     request: ModelRequest,
@@ -74,29 +92,72 @@ export interface ModelAdapter {
 export interface ModelResponse {
   readonly content: readonly ContentBlock[];
   readonly toolCalls: readonly ToolCall[];
+  readonly reasoning: string;
+  readonly usage?: ModelUsage;
+}
+
+export interface ModelUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+}
+
+export interface ModelCallOptions extends ModelExecutionContext {
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly stepId: string;
+  readonly modelCallId: string;
+  readonly timeoutMs: number;
+  readonly maxAttempts: number;
+  readonly onAttemptStarted: (attempt: number) => void | Promise<void>;
+  readonly onAttemptFailed: (
+    attempt: number,
+    error: unknown,
+    retryable: boolean,
+  ) => void | Promise<void>;
+}
+
+export interface ModelDeltaUpdate {
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly stepId: string;
+  readonly modelCallId: string;
+  readonly delta: string;
+}
+
+export interface ModelUsageUpdate {
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly stepId: string;
+  readonly modelCallId: string;
+  readonly usage: ModelUsage;
 }
 
 export class ModelsModule extends Service {
-  private readonly adapters = new Map<string, ModelAdapter>();
+  private readonly adapters = new LeasedRegistry<ModelAdapter>();
   private readonly calls: Semaphore;
+  private readonly retry: ModelRetryOptions;
 
-  constructor(ctx: Context, maxConcurrentCalls: number) {
+  constructor(
+    ctx: Context,
+    maxConcurrentCalls: number,
+    retry: ModelRetryOptions,
+  ) {
     super(ctx, "models");
     this.calls = new Semaphore(maxConcurrentCalls);
+    this.retry = retry;
   }
 
   register(adapter: ModelAdapter): void {
     this.ctx.effect(() => {
-      if (this.adapters.has(adapter.id)) {
-        throw new Error(`model adapter is already registered: ${adapter.id}`);
+      if (this.adapters.contains(adapter.id)) {
+        throw new KernelError(
+          "REGISTRATION_CONFLICT",
+          `Model Adapter is already registered: ${adapter.id}`,
+        );
       }
 
-      this.adapters.set(adapter.id, adapter);
-      return () => {
-        if (this.adapters.get(adapter.id) === adapter) {
-          this.adapters.delete(adapter.id);
-        }
-      };
+      return this.adapters.register(adapter);
     });
   }
 
@@ -104,31 +165,92 @@ export class ModelsModule extends Service {
     return this.adapters.has(id);
   }
 
+  revision(id: string): number {
+    const revision = this.adapters.revision(id);
+    if (revision === undefined) {
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Unknown Model Adapter: ${id}`,
+      );
+    }
+    return revision;
+  }
+
   capabilities(id: string): ModelCapabilities {
     const adapter = this.adapters.get(id);
-    if (!adapter) throw new Error(`unknown model adapter: ${id}`);
+    if (!adapter) {
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Unknown Model Adapter: ${id}`,
+      );
+    }
     return {
       contextWindow: adapter.capabilities?.contextWindow ?? 128_000,
       maxOutputTokens: adapter.capabilities?.maxOutputTokens ?? 4_096,
       safetyMarginTokens: adapter.capabilities?.safetyMarginTokens ?? 0,
+      supportsTools: adapter.capabilities?.supportsTools ?? true,
+      supportsImages: adapter.capabilities?.supportsImages ?? false,
       ...(adapter.capabilities?.countTokens
         ? { countTokens: adapter.capabilities.countTokens }
         : {}),
     };
   }
 
+  hold(id: string): () => void {
+    const lease = this.adapters.acquire(id);
+    if (!lease) {
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Model Adapter is not available for a Turn: ${id}`,
+      );
+    }
+    return lease.release;
+  }
+
   async generate(
     adapterId: string,
     request: ModelRequest,
-    context: ModelExecutionContext,
-    timeoutMs: number,
+    options: ModelCallOptions,
   ): Promise<ModelResponse> {
     const adapter = this.adapters.get(adapterId);
-    if (!adapter) throw new Error(`unknown model adapter: ${adapterId}`);
+    if (!adapter) {
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Unknown Model Adapter: ${adapterId}`,
+      );
+    }
 
-    const release = await this.calls.acquire(context.signal);
+    for (let attempt = 1; attempt <= options.maxAttempts; attempt += 1) {
+      await options.onAttemptStarted(attempt);
+      try {
+        return await this.generateAttempt(adapter, request, options);
+      } catch (error) {
+        const retryable = isRetryableModelError(error, options.signal);
+        await options.onAttemptFailed(attempt, error, retryable);
+        if (!retryable || attempt === options.maxAttempts) throw error;
+        const delay = Math.min(
+          this.retry.maxDelayMs,
+          this.retry.baseDelayMs * 2 ** (attempt - 1),
+        );
+        await abortableDelay(delay, options.signal);
+      }
+    }
+    throw new KernelError(
+      "INVARIANT_VIOLATION",
+      "ModelCall has no available attempts",
+    );
+  }
+
+  private async generateAttempt(
+    adapter: ModelAdapter,
+    request: ModelRequest,
+    options: ModelCallOptions,
+  ): Promise<ModelResponse> {
+    const release = await this.calls.acquire(options.signal);
 
     let text = "";
+    let reasoning = "";
+    let usage: ModelUsage | undefined;
     let completed = false;
     const toolCalls: ToolCall[] = [];
 
@@ -136,23 +258,53 @@ export class ModelsModule extends Service {
     const timer = setTimeout(() => {
       timeoutController.abort(
         new DOMException(
-          `model call timed out after ${timeoutMs}ms`,
+          `model call timed out after ${options.timeoutMs}ms`,
           "TimeoutError",
         ),
       );
-    }, timeoutMs);
+    }, options.timeoutMs);
     timer.unref();
-    const signal = AbortSignal.any([context.signal, timeoutController.signal]);
+    const signal = AbortSignal.any([options.signal, timeoutController.signal]);
 
+    const iterator = adapter.generate(request, { signal })[Symbol.asyncIterator]();
     try {
-      for await (const event of adapter.generate(request, { signal })) {
+      while (true) {
+        const next = await raceWithAbort(iterator.next(), signal);
+        if (next.done) break;
+        const event = next.value;
         switch (event.type) {
           case "text-delta":
             text += event.delta;
+            this.ctx.emit("model/text-delta", modelUpdate(options, event.delta));
+            break;
+          case "reasoning-delta":
+            reasoning += event.delta;
+            this.ctx.emit(
+              "model/reasoning-delta",
+              modelUpdate(options, event.delta),
+            );
             break;
           case "tool-call":
             toolCalls.push(event.call);
             break;
+          case "usage":
+            usage = {
+              inputTokens: event.inputTokens,
+              outputTokens: event.outputTokens,
+              totalTokens: event.totalTokens,
+            };
+            this.ctx.emit("model/usage", {
+              sessionId: options.sessionId,
+              turnId: options.turnId,
+              stepId: options.stepId,
+              modelCallId: options.modelCallId,
+              usage,
+            });
+            break;
+          case "response-failed":
+            throw Object.assign(new Error(event.error), {
+              retryable: event.retryable,
+            });
           case "response-completed":
             completed = true;
             break;
@@ -160,22 +312,92 @@ export class ModelsModule extends Service {
       }
     } finally {
       clearTimeout(timer);
+      if (signal.aborted && iterator.return) {
+        void iterator.return().catch(() => undefined);
+      }
       release();
     }
 
     if (!completed) {
-      throw new Error(`model adapter ended without a terminal event: ${adapterId}`);
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Model Adapter ended without a terminal event: ${adapter.id}`,
+      );
     }
 
     return {
       content: text ? [{ type: "text", text }] : [],
       toolCalls,
+      reasoning,
+      ...(usage ? { usage } : {}),
     };
   }
+}
+
+function modelUpdate(
+  options: ModelCallOptions,
+  delta: string,
+): ModelDeltaUpdate {
+  return {
+    sessionId: options.sessionId,
+    turnId: options.turnId,
+    stepId: options.stepId,
+    modelCallId: options.modelCallId,
+    delta,
+  };
+}
+
+async function raceWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw signal.reason;
+
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
+function isRetryableModelError(error: unknown, turnSignal: AbortSignal): boolean {
+  if (turnSignal.aborted) return false;
+  if (error instanceof DOMException && error.name === "TimeoutError") return true;
+  return (
+    !!error &&
+    typeof error === "object" &&
+    "retryable" in error &&
+    (error as { retryable?: unknown }).retryable === true
+  );
+}
+
+function abortableDelay(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (delayMs <= 0) return Promise.resolve();
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    timer.unref();
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 declare module "cordis" {
   interface Context {
     models: ModelsModule;
+  }
+
+  interface Events {
+    "model/text-delta"(update: ModelDeltaUpdate): void;
+    "model/reasoning-delta"(update: ModelDeltaUpdate): void;
+    "model/usage"(update: ModelUsageUpdate): void;
   }
 }

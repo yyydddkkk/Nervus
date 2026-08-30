@@ -46,6 +46,7 @@ describe("OpenAI-compatible Chat Completions Adapter", () => {
         `data: ${JSON.stringify({ choices: [{ delta: { content: "hello" } }] })}\n\n`,
         `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name: wireName, arguments: '{"value":' } }] } }] })}\n\n`,
         `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "21}" } }] }, finish_reason: "tool_calls" }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } })}\n\n`,
         "data: [DONE]\n\n",
       ].join("");
       return new Response(splitStream(events), {
@@ -89,6 +90,12 @@ describe("OpenAI-compatible Chat Completions Adapter", () => {
 
     expect(events).toEqual([
       { type: "text-delta", delta: "hello" },
+      {
+        type: "usage",
+        inputTokens: 5,
+        outputTokens: 2,
+        totalTokens: 7,
+      },
       {
         type: "tool-call",
         call: {

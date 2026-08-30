@@ -28,6 +28,7 @@ describe("Context and Skills", () => {
   it("assembles stable ContextBlock layers and records budget drops", async () => {
     const contributor: ContextContributor = {
       id: "test/context",
+      revision: 3,
       async contribute() {
         return [
           {
@@ -108,6 +109,16 @@ describe("Context and Skills", () => {
         dropped: [
           { id: "runtime/noise", reason: "input budget exceeded" },
         ],
+      });
+      const turnStarted = (await session.events()).find(
+        (event) => event.payload.type === "turn/started",
+      );
+      if (!turnStarted || turnStarted.payload.type !== "turn/started") {
+        throw new Error("missing Turn start event");
+      }
+      expect(turnStarted.payload.agent).toMatchObject({
+        modelRevision: 1,
+        contextContributors: [{ id: "test/context", revision: 3 }],
       });
     } finally {
       await kernel.dispose();
@@ -290,6 +301,150 @@ describe("Context and Skills", () => {
         dropped: [
           { id: "runtime/expensive", reason: "input budget exceeded" },
         ],
+      });
+    } finally {
+      await kernel.dispose();
+    }
+  });
+
+  it("drops prior history without removing the current Turn messages", async () => {
+    const model: ModelAdapter = {
+      id: "scripted/current-turn-history",
+      capabilities: {
+        contextWindow: 30,
+        maxOutputTokens: 10,
+        countTokens(request) {
+          const hasOldAssistant = request.messages.some(
+            (message) =>
+              message.role === "assistant" &&
+              message.content.some(
+                (block) => block.type === "text" && block.text.startsWith("old:"),
+              ),
+          );
+          return hasOldAssistant ? 100 : 5;
+        },
+      },
+      async *generate(request) {
+        const input = latestUserText(request);
+        yield {
+          type: "text-delta",
+          delta: input === "first" ? `old:${"history ".repeat(20)}` : "current kept",
+        };
+        yield { type: "response-completed" };
+      },
+    };
+    const plugin: Plugin.Object<void> = {
+      name: "test/current-turn-history",
+      inject: ["models"],
+      apply(ctx) {
+        ctx.models.register(model);
+      },
+    };
+    const kernel = await createKernel({ plugins: [plugin] });
+
+    try {
+      const agent = await kernel.createAgent({
+        id: "current-turn-agent",
+        model: { adapter: model.id, model: "scripted" },
+      });
+      const session = await kernel.createSession({
+        id: "current-turn-session",
+        agentId: agent.id,
+      });
+      await session.send({ content: [{ type: "text", text: "first" }] });
+      await expect(
+        session.send({ content: [{ type: "text", text: "second" }] }),
+      ).resolves.toMatchObject({
+        status: "completed",
+        output: [{ type: "text", text: "current kept" }],
+      });
+
+      const starts = (await session.events()).filter(
+        (event) => event.payload.type === "model/call-started",
+      );
+      const second = starts.at(-1);
+      if (!second || second.payload.type !== "model/call-started") {
+        throw new Error("missing second ModelRequestSnapshot");
+      }
+      expect(second.payload.snapshot.report).toMatchObject({
+        includedBlockIds: ["agent/instructions", "history/messages"],
+        dropped: [
+          { id: "history/prior", reason: "input budget exceeded" },
+        ],
+      });
+    } finally {
+      await kernel.dispose();
+    }
+  });
+
+  it("uses a ContextBlock truncator before dropping the whole Block", async () => {
+    const contributor: ContextContributor = {
+      id: "test/truncation",
+      contribute() {
+        return [
+          {
+            id: "memory/truncatable",
+            source: "test/truncation",
+            layer: "memory",
+            order: 0,
+            retention: "preferred",
+            tokenEstimate: 20,
+            content: {
+              type: "instructions",
+              blocks: [{ type: "text", text: "long memory" }],
+            },
+            truncate(targetTokens) {
+              expect(targetTokens).toBeLessThan(20);
+              return {
+                type: "instructions",
+                blocks: [{ type: "text", text: "short" }],
+              };
+            },
+          },
+        ];
+      },
+    };
+    const model: ModelAdapter = {
+      id: "scripted/truncation",
+      capabilities: { contextWindow: 18, maxOutputTokens: 10 },
+      async *generate(request) {
+        expect(instructionTexts(request)).toContain("short");
+        expect(instructionTexts(request)).not.toContain("long memory");
+        yield { type: "text-delta", delta: "truncated" };
+        yield { type: "response-completed" };
+      },
+    };
+    const plugin: Plugin.Object<void> = {
+      name: "test/truncation",
+      inject: ["models", "context"],
+      apply(ctx) {
+        ctx.models.register(model);
+        ctx.context.register(contributor);
+      },
+    };
+    const kernel = await createKernel({ plugins: [plugin] });
+
+    try {
+      const agent = await kernel.createAgent({
+        id: "truncation-agent",
+        model: { adapter: model.id, model: "scripted" },
+      });
+      const session = await kernel.createSession({
+        id: "truncation-session",
+        agentId: agent.id,
+      });
+      await session.send({ content: [{ type: "text", text: "truncate" }] });
+      const started = (await session.events()).find(
+        (event) => event.payload.type === "model/call-started",
+      );
+      if (!started || started.payload.type !== "model/call-started") {
+        throw new Error("missing ModelRequestSnapshot");
+      }
+      expect(started.payload.snapshot.report).toMatchObject({
+        truncated: [
+          { id: "memory/truncatable", fromTokens: 20, toTokens: 2 },
+        ],
+        dropped: [],
       });
     } finally {
       await kernel.dispose();

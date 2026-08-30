@@ -10,6 +10,7 @@ import { join } from "node:path";
 
 import type { SessionEvent, SessionEventEnvelope } from "./events.js";
 import type { SessionJournal } from "./journal.js";
+import { KernelError } from "../kernel/error.js";
 
 export interface JsonlSessionJournalOptions {
   readonly directory: string;
@@ -21,7 +22,10 @@ export class JsonlSessionJournal implements SessionJournal {
 
   constructor(options: JsonlSessionJournalOptions) {
     if (!options.directory) {
-      throw new TypeError("JSONL SessionJournal requires an explicit directory");
+      throw new KernelError(
+        "SESSION_CONFLICT",
+        "JSONL SessionJournal requires an explicit directory",
+      );
     }
     this.#directory = options.directory;
   }
@@ -32,7 +36,9 @@ export class JsonlSessionJournal implements SessionJournal {
     events: readonly SessionEvent[],
   ): Promise<readonly SessionEventEnvelope[]> {
     if (events.length === 0) {
-      return Promise.reject(new Error("event batch must not be empty"));
+      return Promise.reject(
+        new KernelError("SESSION_CONFLICT", "Event batch must not be empty"),
+      );
     }
 
     const previous = this.#tails.get(sessionId) ?? Promise.resolve();
@@ -61,7 +67,8 @@ export class JsonlSessionJournal implements SessionJournal {
   ): Promise<readonly SessionEventEnvelope[]> {
     const current = await this.#readUnlocked(sessionId);
     if (current.length !== expectedRevision) {
-      throw new Error(
+      throw new KernelError(
+        "SESSION_CONFLICT",
         `session revision conflict: expected ${expectedRevision}, actual ${current.length}`,
       );
     }
@@ -137,7 +144,10 @@ function parseEnvelope(
 ): SessionEventEnvelope {
   const value: unknown = JSON.parse(line);
   if (!value || typeof value !== "object") {
-    throw new Error(`invalid SessionEvent envelope at sequence ${expectedSequence}`);
+    throw new KernelError(
+      "INVARIANT_VIOLATION",
+      `Invalid SessionEvent envelope at sequence ${expectedSequence}`,
+    );
   }
 
   const envelope = value as Partial<SessionEventEnvelope>;
@@ -151,7 +161,10 @@ function parseEnvelope(
     !envelope.payload ||
     envelope.payload.type !== envelope.type
   ) {
-    throw new Error(`invalid SessionEvent envelope at sequence ${expectedSequence}`);
+    throw new KernelError(
+      "INVARIANT_VIOLATION",
+      `Invalid SessionEvent envelope at sequence ${expectedSequence}`,
+    );
   }
   return envelope as SessionEventEnvelope;
 }

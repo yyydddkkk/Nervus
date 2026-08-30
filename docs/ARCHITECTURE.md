@@ -210,9 +210,9 @@ input/accepted
 turn/started | completed | exhausted | cancelled | interrupted | failed
 user/message
 step/started | completed
-model/call-started | attempt-started | attempt-failed | call-completed | call-failed
+model/call-started | attempt-started | attempt-failed | call-completed | call-failed | call-interrupted
 assistant/message
-tool/call-started | call-completed
+tool/call-started | call-completed | call-cancelled | call-failed | call-interrupted
 skill/activated
 compaction/completed
 ```

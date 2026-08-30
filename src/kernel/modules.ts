@@ -21,7 +21,11 @@ export function mountRequiredModules(
   ctx: Context,
   options: KernelRuntimeOptions,
 ): void {
-  new ModelsModule(ctx, options.concurrency.maxModelCalls);
+  new ModelsModule(
+    ctx,
+    options.concurrency.maxModelCalls,
+    options.retry,
+  );
   new ToolsModule(ctx, options.concurrency.maxToolCalls);
   new ContextModule(ctx);
   new SkillsModule(ctx);

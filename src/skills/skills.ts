@@ -3,6 +3,11 @@ import { Service, type Context } from "cordis";
 import type { ContextBlock } from "../context/context.js";
 import type { ContentBlock } from "../domain/content.js";
 import type { SessionEventEnvelope } from "../sessions/events.js";
+import { KernelError } from "../kernel/error.js";
+import {
+  LeasedRegistry,
+  type RegistrationLease,
+} from "../kernel/leased-registry.js";
 
 export interface SkillResource {
   readonly uri: string;
@@ -11,6 +16,7 @@ export interface SkillResource {
 
 export interface SkillDefinition {
   readonly id: string;
+  readonly revision?: number;
   readonly name: string;
   readonly description: string;
   readonly instructions: readonly ContentBlock[];
@@ -23,7 +29,7 @@ export interface SkillRef {
 }
 
 export class SkillsModule extends Service {
-  private readonly skills = new Map<string, SkillDefinition>();
+  private readonly skills = new LeasedRegistry<SkillDefinition>();
 
   constructor(ctx: Context) {
     super(ctx, "skills");
@@ -55,18 +61,44 @@ export class SkillsModule extends Service {
 
   register(skill: SkillDefinition): void {
     this.ctx.effect(() => {
-      if (this.skills.has(skill.id)) {
-        throw new Error(`Skill is already registered: ${skill.id}`);
+      if (this.skills.contains(skill.id)) {
+        throw new KernelError(
+          "REGISTRATION_CONFLICT",
+          `Skill is already registered: ${skill.id}`,
+        );
       }
-      this.skills.set(skill.id, skill);
-      return () => {
-        if (this.skills.get(skill.id) === skill) this.skills.delete(skill.id);
-      };
+      return this.skills.register(skill);
     });
   }
 
   has(id: string): boolean {
     return this.skills.has(id);
+  }
+
+  revision(id: string): number {
+    const revision = this.skills.revision(id);
+    if (revision === undefined) {
+      throw new KernelError("INVARIANT_VIOLATION", `Unknown Skill: ${id}`);
+    }
+    return revision;
+  }
+
+  hold(ids: readonly string[]): () => void {
+    const leases: RegistrationLease<SkillDefinition>[] = [];
+    for (const id of ids) {
+      const lease = this.skills.acquire(id);
+      if (!lease) {
+        for (const acquired of leases) acquired.release();
+        throw new KernelError(
+          "INVARIANT_VIOLATION",
+          `Skill is not available for a Turn: ${id}`,
+        );
+      }
+      leases.push(lease);
+    }
+    return () => {
+      for (const lease of leases.reverse()) lease.release();
+    };
   }
 
   contextBlocks(
@@ -85,7 +117,12 @@ export class SkillsModule extends Service {
 
     return refs.map((ref, order) => {
       const skill = this.skills.get(ref.id);
-      if (!skill) throw new Error(`unknown Skill: ${ref.id}`);
+      if (!skill) {
+        throw new KernelError(
+          "INVARIANT_VIOLATION",
+          `Unknown Skill: ${ref.id}`,
+        );
+      }
       if (ref.mode === "eager" || activated.has(ref.id)) {
         return {
           id: `skill/${ref.id}/instructions`,

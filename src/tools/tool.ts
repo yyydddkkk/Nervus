@@ -3,6 +3,8 @@ import Ajv, { type ValidateFunction } from "ajv";
 
 import type { ContentBlock } from "../domain/content.js";
 import { Semaphore } from "../kernel/semaphore.js";
+import { KernelError } from "../kernel/error.js";
+import { LeasedRegistry } from "../kernel/leased-registry.js";
 import type { ToolCall } from "../models/model.js";
 
 export interface ToolExecutionContext {
@@ -11,6 +13,21 @@ export interface ToolExecutionContext {
   readonly stepId: string;
   readonly callId: string;
   readonly signal: AbortSignal;
+  reportProgress(content: readonly ContentBlock[]): void;
+}
+
+export type ToolInvocationContext = Omit<
+  ToolExecutionContext,
+  "reportProgress"
+>;
+
+export interface ToolProgress {
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly stepId: string;
+  readonly callId: string;
+  readonly toolId: string;
+  readonly content: readonly ContentBlock[];
 }
 
 export interface ToolExecutionResult {
@@ -25,6 +42,7 @@ export interface ToolResult extends ToolExecutionResult {
 
 export interface ToolDefinition {
   readonly id: string;
+  readonly revision?: number;
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
   execute(
@@ -34,12 +52,14 @@ export interface ToolDefinition {
 }
 
 interface RegisteredTool {
+  readonly id: string;
+  readonly revision?: number;
   readonly definition: ToolDefinition;
   readonly validate: ValidateFunction;
 }
 
 export class ToolsModule extends Service {
-  private readonly tools = new Map<string, RegisteredTool>();
+  private readonly tools = new LeasedRegistry<RegisteredTool>();
   private readonly calls: Semaphore;
   private readonly ajv = new Ajv({ allErrors: true, strict: false });
 
@@ -50,20 +70,20 @@ export class ToolsModule extends Service {
 
   register(tool: ToolDefinition): void {
     this.ctx.effect(() => {
-      if (this.tools.has(tool.id)) {
-        throw new Error(`tool is already registered: ${tool.id}`);
+      if (this.tools.contains(tool.id)) {
+        throw new KernelError(
+          "REGISTRATION_CONFLICT",
+          `Tool is already registered: ${tool.id}`,
+        );
       }
 
       const registered: RegisteredTool = {
+        id: tool.id,
+        ...(tool.revision === undefined ? {} : { revision: tool.revision }),
         definition: tool,
         validate: this.ajv.compile(tool.inputSchema),
       };
-      this.tools.set(tool.id, registered);
-      return () => {
-        if (this.tools.get(tool.id) === registered) {
-          this.tools.delete(tool.id);
-        }
-      };
+      return this.tools.register(registered);
     });
   }
 
@@ -71,19 +91,45 @@ export class ToolsModule extends Service {
     return this.tools.has(id);
   }
 
+  revision(id: string): number {
+    const revision = this.tools.revision(id);
+    if (revision === undefined) {
+      throw new KernelError("INVARIANT_VIOLATION", `Unknown Tool: ${id}`);
+    }
+    return revision;
+  }
+
   describe(id: string): ToolDefinition {
     const tool = this.tools.get(id);
-    if (!tool) throw new Error(`unknown tool: ${id}`);
+    if (!tool) {
+      throw new KernelError("INVARIANT_VIOLATION", `Unknown Tool: ${id}`);
+    }
     return tool.definition;
+  }
+
+  hold(id: string): () => void {
+    const lease = this.tools.acquire(id);
+    if (!lease) {
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Tool is not available for a Turn: ${id}`,
+      );
+    }
+    return lease.release;
   }
 
   async execute(
     call: ToolCall,
-    context: ToolExecutionContext,
+    context: ToolInvocationContext,
     timeoutMs: number,
   ): Promise<ToolResult> {
     const registered = this.tools.get(call.toolId);
-    if (!registered) throw new Error(`unknown tool: ${call.toolId}`);
+    if (!registered) {
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Unknown Tool: ${call.toolId}`,
+      );
+    }
     if (!registered.validate(call.arguments)) {
       return {
         callId: call.id,
@@ -113,8 +159,22 @@ export class ToolsModule extends Service {
     const signal = AbortSignal.any([context.signal, timeoutController.signal]);
 
     try {
+      const executionContext: ToolExecutionContext = {
+        ...context,
+        signal,
+        reportProgress: (content) => {
+          this.ctx.emit("tool/progress", {
+            sessionId: context.sessionId,
+            turnId: context.turnId,
+            stepId: context.stepId,
+            callId: context.callId,
+            toolId: call.toolId,
+            content,
+          });
+        },
+      };
       const result = await raceWithAbort(
-        tool.execute(call.arguments, { ...context, signal }),
+        tool.execute(call.arguments, executionContext),
         signal,
       );
       return {
@@ -161,5 +221,9 @@ async function raceWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Pro
 declare module "cordis" {
   interface Context {
     tools: ToolsModule;
+  }
+
+  interface Events {
+    "tool/progress"(progress: ToolProgress): void;
   }
 }

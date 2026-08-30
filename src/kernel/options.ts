@@ -9,10 +9,16 @@ export interface ConcurrencyLimits {
   readonly maxToolCalls: number;
 }
 
+export interface ModelRetryOptions {
+  readonly baseDelayMs: number;
+  readonly maxDelayMs: number;
+}
+
 export interface KernelRuntimeOptions {
   readonly timeouts: CallTimeouts;
   readonly concurrency: ConcurrencyLimits;
   readonly journal: SessionJournal;
+  readonly retry: ModelRetryOptions;
 }
 
 const DEFAULT_TIMEOUTS: CallTimeouts = {
@@ -26,10 +32,16 @@ const DEFAULT_CONCURRENCY: ConcurrencyLimits = {
   maxToolCalls: 16,
 };
 
+const DEFAULT_RETRY: ModelRetryOptions = {
+  baseDelayMs: 100,
+  maxDelayMs: 1_000,
+};
+
 export function resolveKernelRuntimeOptions(options: {
   readonly timeouts?: Partial<CallTimeouts>;
   readonly concurrency?: Partial<ConcurrencyLimits>;
   readonly journal?: SessionJournal;
+  readonly retry?: Partial<ModelRetryOptions>;
 }): KernelRuntimeOptions {
   return {
     timeouts: Object.freeze({ ...DEFAULT_TIMEOUTS, ...options.timeouts }),
@@ -38,6 +50,7 @@ export function resolveKernelRuntimeOptions(options: {
       ...options.concurrency,
     }),
     journal: options.journal ?? new MemorySessionJournal(),
+    retry: Object.freeze({ ...DEFAULT_RETRY, ...options.retry }),
   };
 }
 import {

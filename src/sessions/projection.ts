@@ -1,5 +1,6 @@
 import type { ContentBlock } from "../domain/content.js";
 import type { SessionEventEnvelope } from "./events.js";
+import { KernelError } from "../kernel/error.js";
 
 export interface TurnSnapshot {
   readonly id: string;
@@ -89,7 +90,10 @@ export function projectSession(
   }
 
   if (!agentId) {
-    throw new Error(`session has no creation event: ${sessionId}`);
+    throw new KernelError(
+      "SESSION_CONFLICT",
+      `Session has no creation event: ${sessionId}`,
+    );
   }
 
   return {

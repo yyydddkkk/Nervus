@@ -4,6 +4,8 @@ import type { AgentSnapshot } from "../agents/agent.js";
 import type { ContentBlock } from "../domain/content.js";
 import type { ModelMessage, ModelRequest } from "../models/model.js";
 import type { SessionEventEnvelope } from "../sessions/events.js";
+import { KernelError } from "../kernel/error.js";
+import { LeasedRegistry } from "../kernel/leased-registry.js";
 
 export type ContextLayer =
   | "kernel"
@@ -33,6 +35,7 @@ export interface ContextBlock {
   readonly retention: ContextRetention;
   readonly content: ContextBlockContent;
   readonly tokenEstimate?: number;
+  readonly truncate?: (targetTokens: number) => ContextBlockContent | null;
 }
 
 export interface ContextContributionInput {
@@ -43,9 +46,20 @@ export interface ContextContributionInput {
 
 export interface ContextContributor {
   readonly id: string;
+  readonly revision?: number;
   contribute(
     input: ContextContributionInput,
   ): readonly ContextBlock[] | Promise<readonly ContextBlock[]>;
+}
+
+export interface ContextContributorRef {
+  readonly id: string;
+  readonly revision: number;
+}
+
+export interface ContextContributorLease {
+  readonly refs: readonly ContextContributorRef[];
+  release(): void;
 }
 
 export interface ContextDrop {
@@ -58,6 +72,13 @@ export interface ContextAssemblyReport {
   readonly estimatedInputTokens: number;
   readonly includedBlockIds: readonly string[];
   readonly dropped: readonly ContextDrop[];
+  readonly truncated: readonly ContextTruncation[];
+}
+
+export interface ContextTruncation {
+  readonly id: string;
+  readonly fromTokens: number;
+  readonly toTokens: number;
 }
 
 export interface AssembledContextBlock {
@@ -68,6 +89,10 @@ export interface AssembledContextBlock {
   readonly retention: ContextRetention;
   readonly content: ContextBlockContent;
   readonly tokenEstimate: number;
+}
+
+interface CandidateContextBlock extends AssembledContextBlock {
+  readonly truncate?: (targetTokens: number) => ContextBlockContent | null;
 }
 
 export interface ModelRequestSnapshot {
@@ -86,7 +111,7 @@ const LAYER_ORDER: Readonly<Record<ContextLayer, number>> = {
 };
 
 export class ContextModule extends Service {
-  private readonly contributors = new Map<string, ContextContributor>();
+  private readonly contributors = new LeasedRegistry<ContextContributor>();
 
   constructor(ctx: Context) {
     super(ctx, "context");
@@ -94,18 +119,43 @@ export class ContextModule extends Service {
 
   register(contributor: ContextContributor): void {
     this.ctx.effect(() => {
-      if (this.contributors.has(contributor.id)) {
-        throw new Error(
+      if (this.contributors.contains(contributor.id)) {
+        throw new KernelError(
+          "REGISTRATION_CONFLICT",
           `ContextContributor is already registered: ${contributor.id}`,
         );
       }
-      this.contributors.set(contributor.id, contributor);
-      return () => {
-        if (this.contributors.get(contributor.id) === contributor) {
-          this.contributors.delete(contributor.id);
-        }
-      };
+      return this.contributors.register(contributor);
     });
+  }
+
+  contributorRefs(): readonly ContextContributorRef[] {
+    return this.contributors.activeValues().map((contributor) => ({
+      id: contributor.id,
+      revision: contributor.revision ?? 1,
+    }));
+  }
+
+  holdContributors(): ContextContributorLease {
+    const leases = this.contributors.activeValues().map((contributor) => {
+      const lease = this.contributors.acquire(contributor.id);
+      if (!lease) {
+        throw new KernelError(
+          "INVARIANT_VIOLATION",
+          `ContextContributor became unavailable: ${contributor.id}`,
+        );
+      }
+      return lease;
+    });
+    return {
+      refs: leases.map((lease) => ({
+        id: lease.value.id,
+        revision: lease.revision,
+      })),
+      release: () => {
+        for (const lease of leases.reverse()) lease.release();
+      },
+    };
   }
 
   async assemble(
@@ -113,7 +163,7 @@ export class ContextModule extends Service {
     events: readonly SessionEventEnvelope[],
     turnId: string,
   ): Promise<ModelRequestSnapshot> {
-    const messages = projectMessages(events);
+    const history = projectMessages(events, turnId);
     const blocks: ContextBlock[] = [
       {
         id: "agent/instructions",
@@ -123,32 +173,52 @@ export class ContextModule extends Service {
         retention: "required",
         content: { type: "instructions", blocks: agent.instructions },
       },
-      {
-        id: "history/messages",
+    ];
+    if (history.prior.length > 0) {
+      blocks.push({
+        id: "history/prior",
         source: "nervus/sessions",
         layer: "history",
         order: 0,
         retention: "preferred",
-        content: { type: "messages", messages },
-      },
-    ];
+        content: { type: "messages", messages: history.prior },
+      });
+    }
+    blocks.push({
+      id: "history/messages",
+      source: "nervus/sessions",
+      layer: "history",
+      order: 1,
+      retention: "required",
+      content: { type: "messages", messages: history.current },
+    });
     blocks.push(...this.ctx.skills.contextBlocks(agent.skills, events, turnId));
 
     const input: ContextContributionInput = { agent, events, turnId };
-    for (const contributor of this.contributors.values()) {
+    for (const ref of agent.contextContributors) {
+      const contributor = this.contributors.get(ref.id);
+      if (!contributor) {
+        throw new KernelError(
+          "INVARIANT_VIOLATION",
+          `Frozen ContextContributor is unavailable: ${ref.id}`,
+        );
+      }
       blocks.push(...(await contributor.contribute(input)));
     }
 
     const identities = new Set<string>();
     for (const block of blocks) {
       if (identities.has(block.id)) {
-        throw new Error(`duplicate ContextBlock identity: ${block.id}`);
+        throw new KernelError(
+          "INVARIANT_VIOLATION",
+          `Duplicate ContextBlock identity: ${block.id}`,
+        );
       }
       identities.add(block.id);
     }
 
     const assembled = blocks
-      .map<AssembledContextBlock>((block) => ({
+      .map<CandidateContextBlock>((block) => ({
         ...block,
         tokenEstimate: block.tokenEstimate ?? estimateBlockTokens(block.content),
       }))
@@ -164,16 +234,42 @@ export class ContextModule extends Service {
     );
     const selected = [...assembled];
     const dropped: ContextDrop[] = [];
+    const truncated: ContextTruncation[] = [];
     let estimatedInputTokens = totalTokens(selected);
+
+    const tryTruncate = (index: number, targetTokens: number): boolean => {
+      const block = selected[index];
+      if (!block?.truncate) return false;
+      const content = block.truncate(Math.max(1, targetTokens));
+      if (!content) return false;
+      const tokenEstimate = estimateBlockTokens(content);
+      if (tokenEstimate >= block.tokenEstimate) return false;
+      const { truncate: _truncate, ...serializable } = block;
+      selected[index] = { ...serializable, content, tokenEstimate };
+      truncated.push({
+        id: block.id,
+        fromTokens: block.tokenEstimate,
+        toTokens: tokenEstimate,
+      });
+      return true;
+    };
 
     for (const retention of ["optional", "preferred"] as const) {
       for (let index = selected.length - 1; index >= 0; index -= 1) {
         if (estimatedInputTokens <= inputBudget) break;
         const block = selected[index];
         if (!block || block.retention !== retention) continue;
+        const targetTokens =
+          block.tokenEstimate - (estimatedInputTokens - inputBudget);
+        if (tryTruncate(index, targetTokens)) {
+          estimatedInputTokens = totalTokens(selected);
+          if (estimatedInputTokens <= inputBudget) continue;
+        }
+        const current = selected[index];
+        if (!current) continue;
         selected.splice(index, 1);
-        estimatedInputTokens -= block.tokenEstimate;
-        dropped.unshift({ id: block.id, reason: "input budget exceeded" });
+        estimatedInputTokens -= current.tokenEstimate;
+        dropped.unshift({ id: current.id, reason: "input budget exceeded" });
       }
     }
 
@@ -210,8 +306,17 @@ export class ContextModule extends Service {
           if (estimatedInputTokens <= inputBudget) break;
           const block = selected[index];
           if (!block || block.retention !== retention) continue;
+          const targetTokens =
+            block.tokenEstimate - (estimatedInputTokens - inputBudget);
+          if (tryTruncate(index, targetTokens)) {
+            request = buildRequest();
+            estimatedInputTokens = await capabilities.countTokens(request);
+            if (estimatedInputTokens <= inputBudget) continue;
+          }
+          const current = selected[index];
+          if (!current) continue;
           selected.splice(index, 1);
-          dropped.unshift({ id: block.id, reason: "input budget exceeded" });
+          dropped.unshift({ id: current.id, reason: "input budget exceeded" });
           request = buildRequest();
           estimatedInputTokens = await capabilities.countTokens(request);
         }
@@ -219,19 +324,21 @@ export class ContextModule extends Service {
     }
 
     if (estimatedInputTokens > inputBudget) {
-      throw new Error(
+      throw new KernelError(
+        "CONTEXT_OVERFLOW",
         `required ContextBlocks exceed model input budget: ${estimatedInputTokens} > ${inputBudget}`,
       );
     }
 
     return {
       request,
-      blocks: selected,
+      blocks: selected.map(stripTruncator),
       report: {
         inputBudget,
         estimatedInputTokens,
         includedBlockIds: selected.map((block) => block.id),
         dropped,
+        truncated,
       },
     };
   }
@@ -239,19 +346,31 @@ export class ContextModule extends Service {
 
 function projectMessages(
   events: readonly SessionEventEnvelope[],
-): readonly ModelMessage[] {
-  const messages: ModelMessage[] = [];
+  currentTurnId: string,
+): {
+  readonly prior: readonly ModelMessage[];
+  readonly current: readonly ModelMessage[];
+} {
+  const prior: ModelMessage[] = [];
+  const current: ModelMessage[] = [];
+  const stepTurns = new Map<string, string>();
+  const append = (turnId: string | undefined, message: ModelMessage) => {
+    (turnId === currentTurnId ? current : prior).push(message);
+  };
   for (const envelope of events) {
     const event = envelope.payload;
     switch (event.type) {
+      case "step/started":
+        stepTurns.set(event.stepId, event.turnId);
+        break;
       case "user/message":
-        messages.push({ role: "user", content: event.content });
+        append(event.turnId, { role: "user", content: event.content });
         break;
       case "assistant/message":
-        messages.push(event.message);
+        append(stepTurns.get(event.stepId), event.message);
         break;
       case "tool/call-completed":
-        messages.push({
+        append(stepTurns.get(event.stepId), {
           role: "tool",
           callId: event.result.callId,
           toolId: event.result.toolId,
@@ -261,7 +380,7 @@ function projectMessages(
         break;
     }
   }
-  return messages;
+  return { prior, current };
 }
 
 function compareBlocks(
@@ -308,6 +427,11 @@ function estimateContentTokens(blocks: readonly ContentBlock[]): number {
 
 function totalTokens(blocks: readonly AssembledContextBlock[]): number {
   return blocks.reduce((total, block) => total + block.tokenEstimate, 0);
+}
+
+function stripTruncator(block: CandidateContextBlock): AssembledContextBlock {
+  const { truncate: _truncate, ...serializable } = block;
+  return serializable;
 }
 
 declare module "cordis" {

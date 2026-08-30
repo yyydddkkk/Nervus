@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { SessionEvent, SessionEventEnvelope } from "./events.js";
+import { KernelError } from "../kernel/error.js";
 
 export interface SessionJournal {
   append(
@@ -19,11 +20,14 @@ export class MemorySessionJournal implements SessionJournal {
     expectedRevision: number,
     events: readonly SessionEvent[],
   ): Promise<readonly SessionEventEnvelope[]> {
-    if (events.length === 0) throw new Error("event batch must not be empty");
+    if (events.length === 0) {
+      throw new KernelError("SESSION_CONFLICT", "Event batch must not be empty");
+    }
 
     const current = this.#streams.get(sessionId) ?? [];
     if (current.length !== expectedRevision) {
-      throw new Error(
+      throw new KernelError(
+        "SESSION_CONFLICT",
         `session revision conflict: expected ${expectedRevision}, actual ${current.length}`,
       );
     }

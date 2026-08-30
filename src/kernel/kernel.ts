@@ -8,10 +8,12 @@ import type {
 } from "../sessions/session.js";
 import type { SessionJournal } from "../sessions/journal.js";
 import { corePlugin } from "./core-plugin.js";
+import { KernelError } from "./error.js";
 import {
   resolveKernelRuntimeOptions,
   type CallTimeouts,
   type ConcurrencyLimits,
+  type ModelRetryOptions,
 } from "./options.js";
 
 export type KernelState = "ready" | "disposing" | "disposed";
@@ -21,6 +23,7 @@ export interface KernelOptions {
   timeouts?: Partial<CallTimeouts>;
   concurrency?: Partial<ConcurrencyLimits>;
   journal?: SessionJournal;
+  retry?: Partial<ModelRetryOptions>;
 }
 
 export class Kernel {
@@ -42,6 +45,11 @@ export class Kernel {
     return this.context.agents.create(spec);
   }
 
+  async updateAgent(spec: AgentSpec): Promise<Agent> {
+    this.#assertReady();
+    return this.context.agents.update(spec);
+  }
+
   async createSession(options: CreateSessionOptions): Promise<Session> {
     this.#assertReady();
     return this.context.sessions.create(options);
@@ -56,9 +64,17 @@ export class Kernel {
     if (this.#disposePromise) return this.#disposePromise;
 
     this.#state = "disposing";
-    const disposePromise = this.context.fiber.dispose().finally(() => {
-      this.#state = "disposed";
-    });
+    const disposePromise = (async () => {
+      try {
+        await this.context.sessions.shutdown();
+      } finally {
+        try {
+          await this.context.fiber.dispose();
+        } finally {
+          this.#state = "disposed";
+        }
+      }
+    })();
     this.#disposePromise = disposePromise;
 
     return disposePromise;
@@ -66,7 +82,10 @@ export class Kernel {
 
   #assertReady(): void {
     if (this.#state !== "ready") {
-      throw new Error(`kernel is not ready: ${this.#state}`);
+      throw new KernelError(
+        "KERNEL_DISPOSING",
+        `Kernel is not ready: ${this.#state}`,
+      );
     }
   }
 }
