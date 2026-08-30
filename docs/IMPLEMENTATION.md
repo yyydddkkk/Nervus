@@ -1,6 +1,6 @@
 # Nervus implementation plan
 
-Nervus is an embeddable TypeScript Agent Kernel built on a frozen Cordis release. Development proceeds through runnable vertical milestones; every milestone is verified through public module interfaces with deterministic model and tool adapters.
+Nervus is an embeddable TypeScript Agent Kernel built on a frozen Cordis release. [ARCHITECTURE.md](./ARCHITECTURE.md) is the accepted design blueprint. Development proceeds through runnable vertical milestones; every milestone is verified through public module interfaces with deterministic model and tool adapters.
 
 ## M0: Foundation
 

@@ -2,7 +2,7 @@
 
 Nervus is an embeddable TypeScript semantic kernel for building pluggable, model-driven agents on top of Cordis.
 
-The project is currently at its foundation milestone. Its canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
+The project is currently at its foundation milestone. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
 
 ## Development
 
