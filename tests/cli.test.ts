@@ -203,4 +203,67 @@ describe("Nervus CLI", () => {
       await rm(workspace, { recursive: true, force: true });
     }
   });
+
+  it("hides internal Compaction text from the user-facing stream", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "nervus-cli-compact-"));
+    const firstInput = "A".repeat(52);
+    const secondInput = "C".repeat(80);
+    const capabilities = { contextWindow: 8_270, maxOutputTokens: 10 };
+
+    try {
+      await expect(
+        runNervusCli(
+          ["chat", "--workspace", workspace, "--session", "compact", firstInput],
+          {
+            io: captureIO(),
+            modelAdapter: {
+              id: "scripted/cli-compaction",
+              capabilities,
+              async *generate() {
+                yield { type: "text-delta", delta: "B".repeat(52) };
+                yield { type: "response-completed" };
+              },
+            },
+          },
+        ),
+      ).resolves.toBe(0);
+
+      const io = captureIO();
+      const model: ModelAdapter = {
+        id: "scripted/cli-compaction",
+        capabilities,
+        async *generate(request) {
+          const compacting = request.instructions.some(
+            (block) =>
+              block.type === "text" &&
+              block.text.includes("Summarize this history"),
+          );
+          yield {
+            type: "text-delta",
+            delta: compacting ? "private internal summary" : "visible answer",
+          };
+          yield { type: "response-completed" };
+        },
+      };
+      await expect(
+        runNervusCli(
+          [
+            "sessions",
+            "resume",
+            "compact",
+            "--workspace",
+            workspace,
+            secondInput,
+          ],
+          { io, modelAdapter: model },
+        ),
+      ).resolves.toBe(0);
+
+      expect(io.output.join("")).toContain("visible answer");
+      expect(io.output.join("")).not.toContain("private internal summary");
+      expect(io.errors.join("")).toContain("[compacting history]");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
 });

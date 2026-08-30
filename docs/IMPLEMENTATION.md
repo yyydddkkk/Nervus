@@ -88,9 +88,18 @@ Status: complete.
 - Forward cancellation and progress, and bind Client cleanup to Cordis lifecycle.
 - Verify the protocol mapping against an in-memory official MCP server.
 
+## M10: Automatic history Compaction
+
+Status: complete.
+
+- Report `needsCompaction` before Context would discard prior Session history.
+- Use a model-backed core HistoryCompactor under existing execution controls.
+- Record the covered event sequence, normalized summary, and source ModelCall atomically.
+- Reassemble from the latest applicable summary plus subsequent messages.
+- Preserve compacted history across Journal restart and fail explicitly on Compaction errors.
+
 ## Deferred
 
 - Memory plugins.
-- Automatic history Compaction.
 - YAML loading, HMR, UI, multi-process or distributed execution.
 - Permissions, approvals, sandboxing, cross-model fallback, and npm publication.

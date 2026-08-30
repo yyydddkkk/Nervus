@@ -73,6 +73,7 @@ export interface ContextAssemblyReport {
   readonly includedBlockIds: readonly string[];
   readonly dropped: readonly ContextDrop[];
   readonly truncated: readonly ContextTruncation[];
+  readonly needsCompaction: boolean;
 }
 
 export interface ContextTruncation {
@@ -99,6 +100,11 @@ export interface ModelRequestSnapshot {
   readonly request: ModelRequest;
   readonly blocks: readonly AssembledContextBlock[];
   readonly report: ContextAssemblyReport;
+}
+
+export interface HistoryCompactionPlan {
+  readonly throughSequence: number;
+  readonly snapshot: ModelRequestSnapshot;
 }
 
 const LAYER_ORDER: Readonly<Record<ContextLayer, number>> = {
@@ -174,12 +180,22 @@ export class ContextModule extends Service {
         content: { type: "instructions", blocks: agent.instructions },
       },
     ];
+    if (history.summary.length > 0) {
+      blocks.push({
+        id: "history/summary",
+        source: "nervus/compaction",
+        layer: "history",
+        order: 0,
+        retention: "preferred",
+        content: { type: "instructions", blocks: history.summary },
+      });
+    }
     if (history.prior.length > 0) {
       blocks.push({
         id: "history/prior",
         source: "nervus/sessions",
         layer: "history",
-        order: 0,
+        order: 1,
         retention: "preferred",
         content: { type: "messages", messages: history.prior },
       });
@@ -188,7 +204,7 @@ export class ContextModule extends Service {
       id: "history/messages",
       source: "nervus/sessions",
       layer: "history",
-      order: 1,
+      order: 2,
       retention: "required",
       content: { type: "messages", messages: history.current },
     });
@@ -339,8 +355,123 @@ export class ContextModule extends Service {
         includedBlockIds: selected.map((block) => block.id),
         dropped,
         truncated,
+        needsCompaction: dropped.some(
+          (drop) =>
+            drop.id === "history/prior" || drop.id === "history/summary",
+        ),
       },
     };
+  }
+
+  async planCompaction(
+    agent: AgentSnapshot,
+    events: readonly SessionEventEnvelope[],
+    turnId: string,
+  ): Promise<HistoryCompactionPlan> {
+    const history = projectHistory(events, turnId);
+    const currentTurn = events.find(
+      (envelope) =>
+        envelope.payload.type === "turn/started" &&
+        envelope.payload.turnId === turnId,
+    );
+    if (!currentTurn) {
+      throw new KernelError(
+        "INVARIANT_VIOLATION",
+        `Cannot compact history before Turn start: ${turnId}`,
+      );
+    }
+
+    const terminalSequences = events
+      .filter(
+        (envelope) =>
+          envelope.sequence < currentTurn.sequence &&
+          envelope.sequence > history.throughSequence &&
+          isTurnTerminal(envelope.payload.type),
+      )
+      .map((envelope) => envelope.sequence)
+      .sort((left, right) => right - left);
+    const candidates = [
+      ...terminalSequences,
+      ...(history.summary.length > 0 ? [history.throughSequence] : []),
+    ];
+    const capabilities = this.ctx.models.capabilities(agent.model.adapter);
+    const reservedOutput =
+      agent.model.maxOutputTokens ?? capabilities.maxOutputTokens;
+    const inputBudget = Math.max(
+      0,
+      capabilities.contextWindow -
+        reservedOutput -
+        capabilities.safetyMarginTokens,
+    );
+    const directive: ContentBlock = {
+      type: "text",
+      text: "Summarize this history for future turns. Preserve decisions, facts, constraints, tool outcomes, and open tasks.",
+    };
+
+    for (const throughSequence of candidates) {
+      const messages = history.prior
+        .filter((item) => item.sequence <= throughSequence)
+        .map((item) => item.message);
+      const instructions = [directive, ...history.summary];
+      if (messages.length === 0 && history.summary.length === 0) continue;
+      const request: ModelRequest = {
+        model: agent.model.model,
+        instructions,
+        messages,
+        tools: [],
+      };
+      const blocks: readonly AssembledContextBlock[] = [
+        {
+          id: "kernel/compaction-instructions",
+          source: "nervus/compaction",
+          layer: "kernel",
+          order: 0,
+          retention: "required",
+          content: { type: "instructions", blocks: instructions },
+          tokenEstimate: estimateContentTokens(instructions),
+        },
+        ...(messages.length > 0
+          ? [
+              {
+                id: "history/compaction-source",
+                source: "nervus/sessions",
+                layer: "history" as const,
+                order: 0,
+                retention: "required" as const,
+                content: { type: "messages" as const, messages },
+                tokenEstimate: estimateBlockTokens({
+                  type: "messages",
+                  messages,
+                }),
+              },
+            ]
+          : []),
+      ];
+      const estimatedInputTokens = capabilities.countTokens
+        ? await capabilities.countTokens(request)
+        : blocks.reduce((total, block) => total + block.tokenEstimate, 0);
+      if (estimatedInputTokens > inputBudget) continue;
+      return {
+        throughSequence,
+        snapshot: {
+          request,
+          blocks,
+          report: {
+            inputBudget,
+            estimatedInputTokens,
+            includedBlockIds: blocks.map((block) => block.id),
+            dropped: [],
+            truncated: [],
+            needsCompaction: false,
+          },
+        },
+      };
+    }
+
+    throw new KernelError(
+      "CONTEXT_OVERFLOW",
+      "Session history cannot fit in a Compaction ModelCall",
+    );
   }
 }
 
@@ -348,14 +479,66 @@ function projectMessages(
   events: readonly SessionEventEnvelope[],
   currentTurnId: string,
 ): {
+  readonly summary: readonly ContentBlock[];
   readonly prior: readonly ModelMessage[];
   readonly current: readonly ModelMessage[];
 } {
-  const prior: ModelMessage[] = [];
+  const history = projectHistory(events, currentTurnId);
+  return {
+    summary: history.summary,
+    prior: history.prior.map((item) => item.message),
+    current: history.current,
+  };
+}
+
+interface SequencedMessage {
+  readonly sequence: number;
+  readonly message: ModelMessage;
+}
+
+function projectHistory(
+  events: readonly SessionEventEnvelope[],
+  currentTurnId: string,
+): {
+  readonly summary: readonly ContentBlock[];
+  readonly throughSequence: number;
+  readonly prior: readonly SequencedMessage[];
+  readonly current: readonly ModelMessage[];
+} {
+  const currentTurnSequence =
+    events.find(
+      (envelope) =>
+        envelope.payload.type === "turn/started" &&
+        envelope.payload.turnId === currentTurnId,
+    )?.sequence ?? Number.POSITIVE_INFINITY;
+  const latestCompaction = events
+    .filter(
+      (envelope) =>
+        envelope.payload.type === "history/compacted" &&
+        envelope.payload.throughSequence < currentTurnSequence,
+    )
+    .at(-1);
+  const summary =
+    latestCompaction?.payload.type === "history/compacted"
+      ? latestCompaction.payload.summary
+      : [];
+  const throughSequence =
+    latestCompaction?.payload.type === "history/compacted"
+      ? latestCompaction.payload.throughSequence
+      : 0;
+  const prior: SequencedMessage[] = [];
   const current: ModelMessage[] = [];
   const stepTurns = new Map<string, string>();
-  const append = (turnId: string | undefined, message: ModelMessage) => {
-    (turnId === currentTurnId ? current : prior).push(message);
+  const append = (
+    envelope: SessionEventEnvelope,
+    turnId: string | undefined,
+    message: ModelMessage,
+  ) => {
+    if (turnId === currentTurnId) {
+      current.push(message);
+    } else if (envelope.sequence > throughSequence) {
+      prior.push({ sequence: envelope.sequence, message });
+    }
   };
   for (const envelope of events) {
     const event = envelope.payload;
@@ -364,13 +547,16 @@ function projectMessages(
         stepTurns.set(event.stepId, event.turnId);
         break;
       case "user/message":
-        append(event.turnId, { role: "user", content: event.content });
+        append(envelope, event.turnId, {
+          role: "user",
+          content: event.content,
+        });
         break;
       case "assistant/message":
-        append(stepTurns.get(event.stepId), event.message);
+        append(envelope, stepTurns.get(event.stepId), event.message);
         break;
       case "tool/call-completed":
-        append(stepTurns.get(event.stepId), {
+        append(envelope, stepTurns.get(event.stepId), {
           role: "tool",
           callId: event.result.callId,
           toolId: event.result.toolId,
@@ -380,7 +566,17 @@ function projectMessages(
         break;
     }
   }
-  return { prior, current };
+  return { summary, throughSequence, prior, current };
+}
+
+function isTurnTerminal(type: string): boolean {
+  return (
+    type === "turn/completed" ||
+    type === "turn/exhausted" ||
+    type === "turn/cancelled" ||
+    type === "turn/failed" ||
+    type === "turn/interrupted"
+  );
 }
 
 function compareBlocks(

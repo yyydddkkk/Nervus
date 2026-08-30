@@ -13,6 +13,7 @@ describe("Kernel", () => {
     expect(kernel.context.models.name).toBe("models");
     expect(kernel.context.tools.name).toBe("tools");
     expect(kernel.context.context.name).toBe("context");
+    expect(kernel.context.historyCompactor.name).toBe("historyCompactor");
     expect(kernel.context.skills.name).toBe("skills");
 
     await kernel.dispose();

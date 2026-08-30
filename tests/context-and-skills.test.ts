@@ -307,13 +307,20 @@ describe("Context and Skills", () => {
     }
   });
 
-  it("drops prior history without removing the current Turn messages", async () => {
+  it("compacts prior history without removing the current Turn messages", async () => {
     const model: ModelAdapter = {
       id: "scripted/current-turn-history",
       capabilities: {
         contextWindow: 30,
         maxOutputTokens: 10,
         countTokens(request) {
+          if (
+            instructionTexts(request).includes(
+              "Summarize this history for future turns. Preserve decisions, facts, constraints, tool outcomes, and open tasks.",
+            )
+          ) {
+            return 5;
+          }
           const hasOldAssistant = request.messages.some(
             (message) =>
               message.role === "assistant" &&
@@ -325,6 +332,15 @@ describe("Context and Skills", () => {
         },
       },
       async *generate(request) {
+        if (
+          instructionTexts(request).includes(
+            "Summarize this history for future turns. Preserve decisions, facts, constraints, tool outcomes, and open tasks.",
+          )
+        ) {
+          yield { type: "text-delta", delta: "compacted old history" };
+          yield { type: "response-completed" };
+          return;
+        }
         const input = latestUserText(request);
         yield {
           type: "text-delta",
@@ -367,10 +383,13 @@ describe("Context and Skills", () => {
         throw new Error("missing second ModelRequestSnapshot");
       }
       expect(second.payload.snapshot.report).toMatchObject({
-        includedBlockIds: ["agent/instructions", "history/messages"],
-        dropped: [
-          { id: "history/prior", reason: "input budget exceeded" },
+        includedBlockIds: [
+          "agent/instructions",
+          "history/summary",
+          "history/messages",
         ],
+        dropped: [],
+        needsCompaction: false,
       });
     } finally {
       await kernel.dispose();

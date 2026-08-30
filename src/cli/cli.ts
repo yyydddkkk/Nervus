@@ -122,12 +122,21 @@ async function runChat(
   let active = false;
   let exitRequested = false;
   let reasoningCharacters = 0;
+  const announcedCompactions = new Set<string>();
   const removeTextListener = kernel.context.on("model/text-delta", (update) => {
+    if (update.purpose === "compaction") {
+      if (!announcedCompactions.has(update.modelCallId)) {
+        announcedCompactions.add(update.modelCallId);
+        options.io.writeError("[compacting history]\n");
+      }
+      return;
+    }
     options.io.write(update.delta);
   });
   const removeReasoningListener = kernel.context.on(
     "model/reasoning-delta",
     (update) => {
+      if (update.purpose === "compaction") return;
       reasoningCharacters += update.delta.length;
     },
   );

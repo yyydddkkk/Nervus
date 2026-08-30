@@ -2,7 +2,7 @@
 
 Audit date: 2026-08-30.
 
-Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [implementation plan](./IMPLEMENTATION.md). This audit distinguishes implemented requirements from items explicitly deferred by the blueprint.
+Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M10 [implementation plan](./IMPLEMENTATION.md). This audit distinguishes implemented requirements from items explicitly deferred by the blueprint.
 
 ## Milestone evidence
 
@@ -18,12 +18,13 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 | M7 Live DeepSeek Tool use | Complete | `examples/deepseek-tool-agent.ts` and `docs/evidence/deepseek-tool-use.md` prove a real four-Step DeepSeek V4 run with parallel read/shell, write, read-back, JSONL persistence, leak scan, and restart recovery. |
 | M8 Interactive CLI host | Complete | `src/cli.ts`, `src/cli/cli.ts`, `tests/cli.test.ts`, and `docs/evidence/deepseek-cli.md` prove chat, resume, list, inspect, Ctrl-C cancellation, durable history, and live DeepSeek Tool use. |
 | M9 MCP Adapter | Complete | `src/mcp/mcp.ts`, `tests/mcp.test.ts`, and `docs/evidence/mcp-adapter.md` prove official SDK v2 discovery, Tool/Resource/Prompt mapping, Agent invocation, and lifecycle ownership. |
+| M10 Automatic history Compaction | Complete | `src/context/compactor.ts`, `src/context/context.ts`, `tests/compaction.test.ts`, and `docs/evidence/automatic-compaction.md` prove pre-drop detection, durable summaries, restart reuse, model-attempt accounting, and explicit failure. |
 
 ## Architecture requirements
 
 | Area | Evidence and conclusion |
 | --- | --- |
-| Cordis foundation | Exactly pinned in `package.json`; six required modules are mounted by `src/kernel/core-plugin.ts` and verified by Kernel tests. |
+| Cordis foundation | Exactly pinned in `package.json`; seven required modules are mounted by `src/kernel/core-plugin.ts` and verified by Kernel tests. |
 | Public facade | `Kernel.createAgent`, `updateAgent`, `createSession`, `openSession`, `dispose`, plus the advanced `kernel.context` escape hatch. |
 | Agent identity | AgentSpec is serializable; each Turn records an immutable AgentSnapshot with Spec, model, Tool, Skill, and ContextContributor revisions. Later Turns observe `updateAgent`; active Turns retain their Snapshot. |
 | Execution hierarchy | Session → Turn → Step → ModelCall/ToolCall is represented by versioned SessionEvents and exercised end to end. No overlapping `Run` concept exists. |
@@ -40,6 +41,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 | Observability | Model text/reasoning/usage and Tool progress are transient Cordis events. Completed reasoning/usage and every lifecycle terminal are durable Session facts. |
 | Reference host | The packaged `nervus` CLI provides explicit workspaces, interactive and one-shot chat, durable Session resume/list/inspect, streamed updates, Tool summaries, and cancellation. |
 | MCP | The official MCP v2 Client is isolated behind a Cordis Plugin. stdio, Streamable HTTP, and connected-Client entry points map server capabilities into existing Tool, Skill, and Context seams. |
+| Compaction | Context reports `needsCompaction`; the Agent Loop durably runs a model-backed summary call, records `history/compacted`, and retries assembly from the summary plus later messages without deleting source events. |
 
 ## Kernel invariant evidence
 
@@ -56,10 +58,9 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 
 ## Explicitly deferred
 
-These are not missing from M0–M6; the accepted blueprint explicitly defers them:
+These are not missing from M0–M10; the accepted blueprint explicitly defers them:
 
 - Concrete Memory plugins.
-- Automatic history Compaction and a production HistoryCompactor.
 - YAML loading, overlays, HMR, UI, and distributed execution.
 - Permissions, approvals, sandboxing, and cross-model fallback.
 - Public npm publication and API compatibility guarantees.

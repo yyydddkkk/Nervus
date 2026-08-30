@@ -170,7 +170,7 @@ export class Session {
       let toolCallCount = 0;
       let modelAttemptCount = 0;
       for (let index = 1; index <= agent.limits.maxSteps; index += 1) {
-        const remainingAttempts =
+        let remainingAttempts =
           agent.limits.maxModelAttempts - modelAttemptCount;
         if (remainingAttempts <= 0) {
           await this.#append({ type: "turn/exhausted", turnId });
@@ -178,7 +178,6 @@ export class Session {
         }
 
         const stepId = randomUUID();
-        const modelCallId = randomUUID();
         await this.#append({
           type: "step/started",
           turnId,
@@ -186,11 +185,107 @@ export class Session {
           index,
         });
 
-        const snapshot = await this.#ctx.context.assemble(
+        let events = await this.#journal.read(this.id);
+        let snapshot = await this.#ctx.context.assemble(
           agent,
-          await this.#journal.read(this.id),
+          events,
           turnId,
         );
+        let compactionPasses = 0;
+        while (snapshot.report.needsCompaction) {
+          compactionPasses += 1;
+          if (compactionPasses > 4) {
+            throw new KernelError(
+              "COMPACTION_FAILED",
+              "History Compaction did not produce a context that fits after 4 passes",
+            );
+          }
+          remainingAttempts =
+            agent.limits.maxModelAttempts - modelAttemptCount;
+          if (remainingAttempts <= 0) {
+            await this.#append({ type: "turn/exhausted", turnId });
+            return { turnId, status: "exhausted", output: [] };
+          }
+
+          const plan = await this.#ctx.context.planCompaction(
+            agent,
+            events,
+            turnId,
+          );
+          const compactionModelCallId = randomUUID();
+          await this.#append({
+            type: "model/call-started",
+            stepId,
+            modelCallId: compactionModelCallId,
+            snapshot: plan.snapshot,
+          });
+          let compacted;
+          try {
+            compacted = await this.#ctx.historyCompactor.compact(
+              agent.model.adapter,
+              plan.snapshot.request,
+              {
+                signal: controller.signal,
+                sessionId: this.id,
+                turnId,
+                stepId,
+                modelCallId: compactionModelCallId,
+                timeoutMs: agent.timeouts.modelMs,
+                maxAttempts: remainingAttempts,
+                purpose: "compaction",
+                onAttemptStarted: async (attempt) => {
+                  modelAttemptCount += 1;
+                  await this.#append({
+                    type: "model/attempt-started",
+                    modelCallId: compactionModelCallId,
+                    attempt,
+                  });
+                },
+                onAttemptFailed: async (attempt, error, retryable) => {
+                  await this.#append({
+                    type: "model/attempt-failed",
+                    modelCallId: compactionModelCallId,
+                    attempt,
+                    error: formatError(error),
+                    retryable,
+                  });
+                },
+              },
+            );
+          } catch (error) {
+            await this.#append({
+              type: "model/call-failed",
+              modelCallId: compactionModelCallId,
+              error: formatError(error),
+            });
+            throw error;
+          }
+          await this.#append(
+            {
+              type: "model/call-completed",
+              modelCallId: compactionModelCallId,
+              content: compacted.content,
+              toolCalls: [],
+              reasoning: compacted.reasoning,
+              ...(compacted.usage ? { usage: compacted.usage } : {}),
+            },
+            {
+              type: "history/compacted",
+              throughSequence: plan.throughSequence,
+              summary: compacted.content,
+              modelCallId: compactionModelCallId,
+            },
+          );
+          events = await this.#journal.read(this.id);
+          snapshot = await this.#ctx.context.assemble(agent, events, turnId);
+        }
+
+        remainingAttempts = agent.limits.maxModelAttempts - modelAttemptCount;
+        if (remainingAttempts <= 0) {
+          await this.#append({ type: "turn/exhausted", turnId });
+          return { turnId, status: "exhausted", output: [] };
+        }
+        const modelCallId = randomUUID();
         await this.#append({
           type: "model/call-started",
           stepId,

@@ -35,8 +35,10 @@ export type {
   ContextLayer,
   ContextRetention,
   ContextTruncation,
+  HistoryCompactionPlan,
   ModelRequestSnapshot,
 } from "./context/context.js";
+export { HistoryCompactorModule } from "./context/compactor.js";
 export type {
   CallTimeouts,
   ConcurrencyLimits,
@@ -62,6 +64,7 @@ export type {
   ModelAdapter,
   ModelCapabilities,
   ModelCallOptions,
+  ModelCallPurpose,
   ModelDeltaUpdate,
   ModelUsage,
   ModelUsageUpdate,

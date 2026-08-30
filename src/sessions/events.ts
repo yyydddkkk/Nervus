@@ -107,6 +107,12 @@ export type SessionEvent =
       readonly skillId: string;
     }
   | {
+      readonly type: "history/compacted";
+      readonly throughSequence: number;
+      readonly summary: readonly ContentBlock[];
+      readonly modelCallId: string;
+    }
+  | {
       readonly type: "step/completed";
       readonly turnId: string;
       readonly stepId: string;

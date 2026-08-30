@@ -322,6 +322,7 @@ describe("durable Sessions", () => {
               includedBlockIds: [],
               dropped: [],
               truncated: [],
+              needsCompaction: false,
             },
           },
         },

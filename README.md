@@ -2,7 +2,7 @@
 
 Nervus is an embeddable TypeScript semantic kernel for building pluggable, model-driven agents on top of Cordis.
 
-The planned M0–M6 kernel is implemented and remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
+The M0–M10 kernel roadmap is implemented, with concrete Memory plugins intentionally deferred. Nervus remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
 
 ## Development
 
@@ -22,6 +22,7 @@ pnpm build
 - Versioned AgentSpec snapshots, FIFO Inputs, bounded Turns and parallel Tools.
 - Memory and atomic JSONL SessionJournals with replay and interrupted recovery.
 - Layered ContextBlocks, model-aware budgets, truncation reports and Skills.
+- Automatic durable history Compaction before prior Turns would be discarded.
 - Scripted and OpenAI-compatible streaming Model Adapters.
 - MCP v2 Adapter for remote Tools, Resources, and Prompts over stdio or Streamable HTTP.
 - Root-scoped `fs/read`, `fs/write`, and `shell/run` reference Tools.
@@ -97,3 +98,9 @@ const kernel = await createKernel({
 ```
 
 Use `mcpHttpPlugin({ id, url, bearerToken })` for Streamable HTTP, or `mcpPlugin({ id, client })` when the application already owns a connected official MCP Client. Discovery occurs when the Plugin mounts, and the Client is closed when it unmounts unless `closeClient: false` is set.
+
+## Automatic history Compaction
+
+When Context assembly reports that prior history would be dropped, the Agent Loop first asks the Agent's Model to summarize the largest complete range that fits. Nervus atomically records the summary with its covered Session sequence and source ModelCall, then reassembles from that summary plus later events. Original SessionEvents are never deleted.
+
+Compaction calls use the normal timeout, retry, cancellation, concurrency, usage, and model-attempt limits. If no safe source range fits or the Model cannot produce a summary, the Turn fails explicitly instead of continuing with silently missing history.

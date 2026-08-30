@@ -72,9 +72,10 @@ Their responsibilities are:
 | Models | Register Model Adapters, normalize streams and errors, apply retry/timeout/concurrency rules, and record usage. |
 | Tools | Register Tools, validate inputs, execute ToolCalls, normalize ToolResults, and manage execution leases. |
 | Context | Collect ContextBlocks, arbitrate the model input budget, and compile ModelRequestSnapshots. |
+| HistoryCompactor | Produce normalized summaries through Models when Context cannot retain prior history. |
 | Skills | Register declarative Skills and resolve eager or Turn-scoped activation. |
 
-SessionJournal is a required Adapter used by Sessions. HistoryCompactor, MCP, Memory, Model Adapters, Tool sets, and hosts are optional.
+SessionJournal is a required Adapter used by Sessions. The model-backed HistoryCompactor is a required coordination service. MCP, Memory, Model Adapters, Tool sets, and hosts remain optional capabilities.
 
 ## 4. Registration and plugin lifecycle
 
@@ -357,9 +358,9 @@ Compaction is explicit and durable, never silent deletion. A successful Compacti
 
 Original SessionEvents remain unchanged. History assembly uses the latest applicable Compaction plus later context-relevant events.
 
-When Context reports `NeedsCompaction`, Agent Loop coordinates HistoryCompactor and retries pure assembly. HistoryCompactor may use a dedicated ModelRef and defaults to the Agent's ModelRef. If compaction retries fail, the Turn fails instead of silently dropping history.
+When Context reports `needsCompaction`, Agent Loop coordinates HistoryCompactor and retries pure assembly. The current HistoryCompactor uses the Agent's frozen ModelRef and the normal model timeout, retry, cancellation, concurrency, usage, and attempt-limit controls. A dedicated Compaction ModelRef can be added later without changing the durable event contract. If compaction fails, the Turn fails instead of silently dropping history.
 
-Automatic Compaction remains the next implementation milestone.
+The durable `history/compacted` fact stores `throughSequence`, normalized summary content, and the source `modelCallId`. Summary completion and this fact are appended atomically. When the full prior range cannot fit a Compaction request, the planner chooses the largest complete-Turn prefix that fits; unrepresented later history remains intact for subsequent assembly or Compaction passes.
 
 ## 16. Cancellation, timeouts, and shutdown
 
@@ -481,11 +482,12 @@ The first usable release includes:
 - eager and available Skills.
 - `fs/read`, `fs/write`, and `shell/run` reference Tools.
 - Replay and interrupted recovery.
+- MCP v2 Adapter and interactive CLI host.
+- Automatic durable history Compaction.
 
 Explicitly deferred:
 
 - Memory plugins.
-- Automatic Compaction.
 - YAML loader, overlays, and HMR.
 - UI and distributed execution.
 - Permissions, approvals, and sandboxing.

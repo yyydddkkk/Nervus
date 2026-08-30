@@ -2,6 +2,7 @@ import type { Context } from "cordis";
 
 import { AgentsModule } from "../agents/agent.js";
 import { ContextModule } from "../context/context.js";
+import { HistoryCompactorModule } from "../context/compactor.js";
 import { ModelsModule } from "../models/model.js";
 import { SessionsModule } from "../sessions/session.js";
 import { SkillsModule } from "../skills/skills.js";
@@ -11,6 +12,7 @@ import type { KernelRuntimeOptions } from "./options.js";
 export {
   AgentsModule,
   ContextModule,
+  HistoryCompactorModule,
   ModelsModule,
   SessionsModule,
   SkillsModule,
@@ -28,6 +30,7 @@ export function mountRequiredModules(
   );
   new ToolsModule(ctx, options.concurrency.maxToolCalls);
   new ContextModule(ctx);
+  new HistoryCompactorModule(ctx);
   new SkillsModule(ctx);
   new AgentsModule(ctx, options.timeouts);
   new SessionsModule(

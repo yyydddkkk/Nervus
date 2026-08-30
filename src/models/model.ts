@@ -110,6 +110,7 @@ export interface ModelCallOptions extends ModelExecutionContext {
   readonly modelCallId: string;
   readonly timeoutMs: number;
   readonly maxAttempts: number;
+  readonly purpose?: ModelCallPurpose;
   readonly onAttemptStarted: (attempt: number) => void | Promise<void>;
   readonly onAttemptFailed: (
     attempt: number,
@@ -118,11 +119,14 @@ export interface ModelCallOptions extends ModelExecutionContext {
   ) => void | Promise<void>;
 }
 
+export type ModelCallPurpose = "response" | "compaction";
+
 export interface ModelDeltaUpdate {
   readonly sessionId: string;
   readonly turnId: string;
   readonly stepId: string;
   readonly modelCallId: string;
+  readonly purpose: ModelCallPurpose;
   readonly delta: string;
 }
 
@@ -131,6 +135,7 @@ export interface ModelUsageUpdate {
   readonly turnId: string;
   readonly stepId: string;
   readonly modelCallId: string;
+  readonly purpose: ModelCallPurpose;
   readonly usage: ModelUsage;
 }
 
@@ -299,6 +304,7 @@ export class ModelsModule extends Service {
               turnId: options.turnId,
               stepId: options.stepId,
               modelCallId: options.modelCallId,
+              purpose: options.purpose ?? "response",
               usage,
             });
             break;
@@ -344,6 +350,7 @@ function modelUpdate(
     turnId: options.turnId,
     stepId: options.stepId,
     modelCallId: options.modelCallId,
+    purpose: options.purpose ?? "response",
     delta,
   };
 }
