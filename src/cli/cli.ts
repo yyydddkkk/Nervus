@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,6 +33,8 @@ interface ParsedOptions {
   readonly sessionId?: string;
   readonly createNew: boolean;
   readonly prompt: string;
+  readonly capabilityRoots: readonly string[];
+  readonly capabilities: readonly string[];
 }
 
 export async function runNervusCli(
@@ -116,10 +118,19 @@ async function runChat(
     },
   };
   const capabilities = await resolveCapabilityLibrary({
-    roots: [fileURLToPath(new URL("../../capabilities", import.meta.url))],
-    select: ["nervus/filesystem"],
+    roots: [
+      fileURLToPath(new URL("../../capabilities", import.meta.url)),
+      ...parsed.capabilityRoots,
+    ],
+    select: ["nervus/filesystem", ...parsed.capabilities],
     configure: { "nervus/filesystem": { root: parsed.workspace } },
   });
+  await mkdir(parsed.sessionsDirectory, { recursive: true });
+  await writeFile(
+    resolve(parsed.sessionsDirectory, "capability-resolution.json"),
+    `${JSON.stringify(capabilities.resolution, null, 2)}\n`,
+    "utf8",
+  );
   const kernel = await createKernel({
     journal,
     plugins: [modelPlugin, ...capabilities.plugins],
@@ -267,6 +278,8 @@ function parseOptions(
   let sessionId = defaults.sessionId;
   let createNew = false;
   const prompt: string[] = [];
+  const capabilityRoots: string[] = [];
+  const capabilities: string[] = [];
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -278,6 +291,14 @@ function parseOptions(
       sessionId = argv[++index];
     } else if (argument === "--new") {
       createNew = true;
+    } else if (argument === "--capability-root") {
+      const value = argv[++index];
+      if (!value) throw new Error("--capability-root requires a path");
+      capabilityRoots.push(resolve(value));
+    } else if (argument === "--capability") {
+      const value = argv[++index];
+      if (!value) throw new Error("--capability requires a Package ID");
+      capabilities.push(value);
     } else if (argument?.startsWith("--")) {
       throw new Error(`Unknown option: ${argument}`);
     } else if (argument !== undefined) {
@@ -295,6 +316,8 @@ function parseOptions(
     ...(sessionId ? { sessionId } : {}),
     createNew,
     prompt: prompt.join(" "),
+    capabilityRoots,
+    capabilities,
   };
 }
 

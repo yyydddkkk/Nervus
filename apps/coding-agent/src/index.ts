@@ -61,6 +61,8 @@ interface ParsedInvocation {
   readonly sessionId: string;
   readonly input: string;
   readonly json: boolean;
+  readonly capabilityRoots: readonly string[];
+  readonly capabilities: readonly string[];
 }
 
 const CODING_SKILL_ID = "nervus/coding";
@@ -161,10 +163,18 @@ async function runInput(
     directory: stateDirectory,
   });
   const capabilities = await resolveCapabilityLibrary({
-    roots: [fileURLToPath(new URL("../../../capabilities", import.meta.url))],
-    select: ["nervus/filesystem"],
+    roots: [
+      fileURLToPath(new URL("../../../capabilities", import.meta.url)),
+      ...parsed.capabilityRoots,
+    ],
+    select: ["nervus/filesystem", ...parsed.capabilities],
     configure: { "nervus/filesystem": { root: parsed.workspace } },
   });
+  await writeFile(
+    join(stateDirectory, "capability-resolution.json"),
+    `${JSON.stringify(capabilities.resolution, null, 2)}\n`,
+    "utf8",
+  );
   const kernel = await createKernel({
     journal,
     plugins: [
@@ -250,6 +260,8 @@ async function parseInvocation(
   let stateDirectory: string | undefined;
   let sessionId: string | undefined = resumedSessionId;
   let json = false;
+  const capabilityRoots: string[] = [];
+  const capabilities: string[] = [];
   const input: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -261,6 +273,14 @@ async function parseInvocation(
       sessionId = argv[++index];
     } else if (argument === "--json") {
       json = true;
+    } else if (argument === "--capability-root") {
+      const value = argv[++index];
+      if (!value) throw new Error("--capability-root requires a path");
+      capabilityRoots.push(resolve(value));
+    } else if (argument === "--capability") {
+      const value = argv[++index];
+      if (!value) throw new Error("--capability requires a Package ID");
+      capabilities.push(value);
     } else if (argument?.startsWith("--")) {
       throw new Error(`Unknown option: ${argument}`);
     } else if (argument !== undefined) {
@@ -278,6 +298,8 @@ async function parseInvocation(
     sessionId: sessionId ?? createSessionId(),
     input: input.join(" "),
     json,
+    capabilityRoots,
+    capabilities,
   };
 }
 
