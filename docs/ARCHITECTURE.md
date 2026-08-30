@@ -18,6 +18,13 @@ Nervus prioritizes, in order:
 
 The first release targets Node.js 22+, ESM, TypeScript, one process, and one machine. Cross-language, multi-process, and distributed execution are deferred.
 
+### Engineering and host conventions
+
+- The repository remains one private npm package during initial development. Source directories are modules, not independently versioned packages; a package is split only after it has a real independent release or dependency lifecycle.
+- Hosts mount Cordis Plugins explicitly from TypeScript during `createKernel()` bootstrap. The Kernel does not scan directories or let AgentSpec load packages. YAML loading and HMR remain optional future host features.
+- Library Adapters never choose hidden filesystem locations. In particular, a JSONL SessionJournal requires an explicit directory; a reference CLI may define its own documented default.
+- The initial users are the project maintainers, so rapid experiments and breaking changes are allowed while the package remains private. Correct semantics and readable interfaces still take precedence over short-lived convenience.
+
 ## 2. Layering
 
 ```text
