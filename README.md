@@ -32,8 +32,21 @@ Nervus includes a raw-fetch streaming Adapter for the Chat Completions protocol 
 
 ```sh
 cp .env.example .env
-# Fill OPENAI_API_KEY and OPENAI_MODEL, then load the environment.
+# Fill OPENAI_API_KEY and OPENAI_MODEL.
 pnpm smoke:openai -- "Say hello from Nervus."
 ```
 
 This command is opt-in and is not part of the deterministic test suite.
+
+### DeepSeek
+
+DeepSeek uses the same Chat Completions shape with a `system` instruction role and streams thinking content through `reasoning_content`. Configure the local ignored `.env` as follows:
+
+```env
+OPENAI_API_KEY=your_deepseek_api_key
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-v4-flash
+OPENAI_INSTRUCTION_ROLE=system
+```
+
+Use `deepseek-v4-flash` for a fast smoke test or change `OPENAI_MODEL` to `deepseek-v4-pro`. The Adapter keeps `developer` as its default for OpenAI and only switches roles when `OPENAI_INSTRUCTION_ROLE=system` is configured.

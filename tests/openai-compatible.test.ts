@@ -107,4 +107,54 @@ describe("OpenAI-compatible Chat Completions Adapter", () => {
       { type: "response-completed" },
     ]);
   });
+
+  it("supports a system instruction role and DeepSeek reasoning deltas", async () => {
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        messages: readonly { role: string; content?: string }[];
+      };
+      expect(body.messages[0]).toEqual({
+        role: "system",
+        content: "Use DeepSeek-compatible instructions.",
+      });
+      const events = [
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "reason" } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "answer" } }] })}\n\n`,
+        "data: [DONE]\n\n",
+      ].join("");
+      return new Response(splitStream(events), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+    const adapter = new OpenAICompatibleChatAdapter({
+      id: "deepseek/test",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "test-key",
+      instructionRole: "system",
+      fetch,
+    });
+    const request: ModelRequest = {
+      model: "deepseek-v4-flash",
+      instructions: [
+        { type: "text", text: "Use DeepSeek-compatible instructions." },
+      ],
+      messages: [
+        { role: "user", content: [{ type: "text", text: "Hello" }] },
+      ],
+      tools: [],
+    };
+
+    const events = [];
+    for await (const event of adapter.generate(request, {
+      signal: new AbortController().signal,
+    })) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "reasoning-delta", delta: "reason" },
+      { type: "text-delta", delta: "answer" },
+      { type: "response-completed" },
+    ]);
+  });
 });

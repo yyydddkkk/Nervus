@@ -8,9 +8,19 @@ import {
 const apiKey = process.env.OPENAI_API_KEY;
 const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 const modelName = process.env.OPENAI_MODEL;
+const instructionRole = process.env.OPENAI_INSTRUCTION_ROLE;
 if (!apiKey || !modelName) {
   throw new Error(
     "Set OPENAI_API_KEY and OPENAI_MODEL before running pnpm smoke:openai",
+  );
+}
+if (
+  instructionRole !== undefined &&
+  instructionRole !== "developer" &&
+  instructionRole !== "system"
+) {
+  throw new Error(
+    "OPENAI_INSTRUCTION_ROLE must be either developer or system",
   );
 }
 
@@ -18,6 +28,7 @@ const adapter = new OpenAICompatibleChatAdapter({
   id: "openai-compatible/smoke",
   baseUrl,
   apiKey,
+  ...(instructionRole ? { instructionRole } : {}),
 });
 const plugin: Plugin.Object<void> = {
   name: "example/openai-compatible",

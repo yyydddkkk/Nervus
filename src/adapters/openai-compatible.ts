@@ -16,6 +16,7 @@ export interface OpenAICompatibleChatAdapterOptions {
   readonly headers?: RequestInit["headers"];
   readonly fetch?: typeof globalThis.fetch;
   readonly capabilities?: Partial<ModelCapabilities>;
+  readonly instructionRole?: "developer" | "system";
 }
 
 export class OpenAICompatibleError extends Error {
@@ -38,6 +39,7 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
   readonly #apiKey: string | undefined;
   readonly #headers: RequestInit["headers"] | undefined;
   readonly #fetch: typeof globalThis.fetch;
+  readonly #instructionRole: "developer" | "system";
 
   constructor(options: OpenAICompatibleChatAdapterOptions) {
     this.id = options.id;
@@ -45,6 +47,7 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
     this.#apiKey = options.apiKey;
     this.#headers = options.headers;
     this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#instructionRole = options.instructionRole ?? "developer";
     if (options.capabilities) this.capabilities = options.capabilities;
   }
 
@@ -65,7 +68,11 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
         model: request.model,
         stream: true,
         stream_options: { include_usage: true },
-        messages: toChatMessages(request, toolNames.byId),
+        messages: toChatMessages(
+          request,
+          toolNames.byId,
+          this.#instructionRole,
+        ),
         tools: request.tools.map((tool) => ({
           type: "function",
           function: {
@@ -117,6 +124,12 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
         };
       }
       const delta = chunk.choices?.[0]?.delta;
+      if (delta?.reasoning_content) {
+        yield {
+          type: "reasoning-delta",
+          delta: delta.reasoning_content,
+        };
+      }
       if (delta?.content) yield { type: "text-delta", delta: delta.content };
       for (const partial of delta?.tool_calls ?? []) {
         const call = pending.get(partial.index) ?? { arguments: "" };
@@ -155,6 +168,7 @@ interface ChatCompletionChunk {
   readonly choices?: readonly {
     readonly delta?: {
       readonly content?: string | null;
+      readonly reasoning_content?: string | null;
       readonly tool_calls?: readonly {
         readonly index: number;
         readonly id?: string;
@@ -181,11 +195,12 @@ function createToolNameMap(request: ModelRequest): ToolNameMap {
 function toChatMessages(
   request: ModelRequest,
   toolNames: ReadonlyMap<string, string>,
+  instructionRole: "developer" | "system",
 ): readonly Record<string, unknown>[] {
   const messages: Record<string, unknown>[] = [];
   if (request.instructions.length > 0) {
     messages.push({
-      role: "developer",
+      role: instructionRole,
       content: contentToText(request.instructions),
     });
   }
