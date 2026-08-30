@@ -405,7 +405,16 @@ function estimateBlockTokens(content: ContextBlockContent): number {
         message.role === "assistant"
           ? Math.ceil(JSON.stringify(message.toolCalls).length / 4)
           : 0;
-      return total + estimateContentTokens(message.content) + toolCallTokens;
+      const reasoningTokens =
+        message.role === "assistant" && message.reasoning
+          ? Math.ceil(message.reasoning.length / 4)
+          : 0;
+      return (
+        total +
+        estimateContentTokens(message.content) +
+        toolCallTokens +
+        reasoningTokens
+      );
     }, 0),
   );
 }

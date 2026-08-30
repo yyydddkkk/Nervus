@@ -17,6 +17,8 @@ export interface OpenAICompatibleChatAdapterOptions {
   readonly fetch?: typeof globalThis.fetch;
   readonly capabilities?: Partial<ModelCapabilities>;
   readonly instructionRole?: "developer" | "system";
+  readonly compatibility?: "openai" | "deepseek";
+  readonly extraBody?: Readonly<Record<string, unknown>>;
 }
 
 export class OpenAICompatibleError extends Error {
@@ -40,6 +42,9 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
   readonly #headers: RequestInit["headers"] | undefined;
   readonly #fetch: typeof globalThis.fetch;
   readonly #instructionRole: "developer" | "system";
+  readonly #replayReasoningContent: boolean;
+  readonly #requireAssistantContent: boolean;
+  readonly #extraBody: Readonly<Record<string, unknown>>;
 
   constructor(options: OpenAICompatibleChatAdapterOptions) {
     this.id = options.id;
@@ -47,7 +52,12 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
     this.#apiKey = options.apiKey;
     this.#headers = options.headers;
     this.#fetch = options.fetch ?? globalThis.fetch;
-    this.#instructionRole = options.instructionRole ?? "developer";
+    const deepSeekCompatible = options.compatibility === "deepseek";
+    this.#instructionRole =
+      options.instructionRole ?? (deepSeekCompatible ? "system" : "developer");
+    this.#replayReasoningContent = deepSeekCompatible;
+    this.#requireAssistantContent = deepSeekCompatible;
+    this.#extraBody = options.extraBody ?? {};
     if (options.capabilities) this.capabilities = options.capabilities;
   }
 
@@ -65,6 +75,7 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
       headers,
       signal: context.signal,
       body: JSON.stringify({
+        ...this.#extraBody,
         model: request.model,
         stream: true,
         stream_options: { include_usage: true },
@@ -72,6 +83,8 @@ export class OpenAICompatibleChatAdapter implements ModelAdapter {
           request,
           toolNames.byId,
           this.#instructionRole,
+          this.#replayReasoningContent,
+          this.#requireAssistantContent,
         ),
         tools: request.tools.map((tool) => ({
           type: "function",
@@ -196,6 +209,8 @@ function toChatMessages(
   request: ModelRequest,
   toolNames: ReadonlyMap<string, string>,
   instructionRole: "developer" | "system",
+  replayReasoningContent: boolean,
+  requireAssistantContent: boolean,
 ): readonly Record<string, unknown>[] {
   const messages: Record<string, unknown>[] = [];
   if (request.instructions.length > 0) {
@@ -205,7 +220,14 @@ function toChatMessages(
     });
   }
   messages.push(
-    ...request.messages.map((message) => toChatMessage(message, toolNames)),
+    ...request.messages.map((message) =>
+      toChatMessage(
+        message,
+        toolNames,
+        replayReasoningContent,
+        requireAssistantContent,
+      ),
+    ),
   );
   return messages;
 }
@@ -213,6 +235,8 @@ function toChatMessages(
 function toChatMessage(
   message: ModelMessage,
   toolNames: ReadonlyMap<string, string>,
+  replayReasoningContent: boolean,
+  requireAssistantContent: boolean,
 ): Record<string, unknown> {
   if (message.role === "user") {
     return { role: "user", content: contentToText(message.content) };
@@ -224,9 +248,19 @@ function toChatMessage(
       content: contentToText(message.content),
     };
   }
+  const content = contentToText(message.content);
+  const assistantContent =
+    content.length > 0
+      ? content
+      : requireAssistantContent && message.toolCalls.length > 0
+        ? ""
+        : null;
   return {
     role: "assistant",
-    content: contentToText(message.content) || null,
+    content: assistantContent,
+    ...(replayReasoningContent && message.reasoning
+      ? { reasoning_content: message.reasoning }
+      : {}),
     tool_calls: message.toolCalls.map((call) => ({
       id: call.id,
       type: "function",

@@ -60,6 +60,15 @@ Status: complete.
 - Enforce global concurrency and immediate-cancel Kernel disposal.
 - Complete cross-module behavior and recovery tests.
 
+## M7: Live DeepSeek Tool use
+
+Status: complete.
+
+- Preserve DeepSeek V4 `reasoning_content` across thinking-mode ToolCall requests.
+- Run a real read → shell → write → read-back Agent task in an isolated workspace.
+- Persist the Session to JSONL and verify an equivalent SessionSnapshot after restart.
+- Record a sanitized receipt and prove the API key is absent from runtime artifacts.
+
 ## Deferred
 
 - MCP adapter and Memory plugins.

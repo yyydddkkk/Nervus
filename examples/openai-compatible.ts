@@ -9,10 +9,18 @@ const apiKey = process.env.OPENAI_API_KEY;
 const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 const modelName = process.env.OPENAI_MODEL;
 const instructionRole = process.env.OPENAI_INSTRUCTION_ROLE;
+const compatibility = process.env.OPENAI_COMPATIBILITY;
 if (!apiKey || !modelName) {
   throw new Error(
     "Set OPENAI_API_KEY and OPENAI_MODEL before running pnpm smoke:openai",
   );
+}
+if (
+  compatibility !== undefined &&
+  compatibility !== "openai" &&
+  compatibility !== "deepseek"
+) {
+  throw new Error("OPENAI_COMPATIBILITY must be either openai or deepseek");
 }
 if (
   instructionRole !== undefined &&
@@ -29,6 +37,15 @@ const adapter = new OpenAICompatibleChatAdapter({
   baseUrl,
   apiKey,
   ...(instructionRole ? { instructionRole } : {}),
+  ...(compatibility ? { compatibility } : {}),
+  ...(compatibility === "deepseek"
+    ? {
+        extraBody: {
+          thinking: { type: "enabled" },
+          reasoning_effort: process.env.DEEPSEEK_REASONING_EFFORT ?? "high",
+        },
+      }
+    : {}),
 });
 const plugin: Plugin.Object<void> = {
   name: "example/openai-compatible",

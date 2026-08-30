@@ -241,6 +241,7 @@ export class Session {
         const assistantMessage: AssistantModelMessage = {
           role: "assistant",
           content: response.content,
+          ...(response.reasoning ? { reasoning: response.reasoning } : {}),
           toolCalls: response.toolCalls,
         };
         await this.#append(

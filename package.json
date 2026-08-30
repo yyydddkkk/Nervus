@@ -19,7 +19,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "smoke:openai": "node --env-file=.env --import tsx examples/openai-compatible.ts"
+    "smoke:openai": "node --env-file=.env --import tsx examples/openai-compatible.ts",
+    "smoke:deepseek:tools": "node --env-file=.env --import tsx examples/deepseek-tool-agent.ts"
   },
   "engines": {
     "node": ">=22"

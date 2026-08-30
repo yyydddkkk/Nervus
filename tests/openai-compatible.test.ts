@@ -157,4 +157,76 @@ describe("OpenAI-compatible Chat Completions Adapter", () => {
       { type: "response-completed" },
     ]);
   });
+
+  it("replays assistant reasoning for DeepSeek thinking-mode ToolCalls", async () => {
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        thinking?: { type: string };
+        reasoning_effort?: string;
+        messages: readonly Record<string, unknown>[];
+      };
+      expect(body.thinking).toEqual({ type: "enabled" });
+      expect(body.reasoning_effort).toBe("high");
+      expect(body.messages[0]).toMatchObject({
+        role: "assistant",
+        content: "",
+        reasoning_content: "I need to call the tool.",
+      });
+      return new Response(splitStream("data: [DONE]\n\n"), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+    const adapter = new OpenAICompatibleChatAdapter({
+      id: "deepseek/replay",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "test-key",
+      compatibility: "deepseek",
+      extraBody: {
+        thinking: { type: "enabled" },
+        reasoning_effort: "high",
+      },
+      fetch,
+    });
+    const request: ModelRequest = {
+      model: "deepseek-v4-flash",
+      instructions: [],
+      messages: [
+        {
+          role: "assistant",
+          content: [],
+          reasoning: "I need to call the tool.",
+          toolCalls: [
+            {
+              id: "call-1",
+              toolId: "test/tool",
+              arguments: {},
+            },
+          ],
+        },
+        {
+          role: "tool",
+          callId: "call-1",
+          toolId: "test/tool",
+          status: "success",
+          content: [{ type: "text", text: "tool result" }],
+        },
+      ],
+      tools: [
+        {
+          id: "test/tool",
+          description: "Test tool.",
+          inputSchema: { type: "object" },
+        },
+      ],
+    };
+
+    const events = [];
+    for await (const event of adapter.generate(request, {
+      signal: new AbortController().signal,
+    })) {
+      events.push(event);
+    }
+    expect(events).toEqual([{ type: "response-completed" }]);
+  });
 });

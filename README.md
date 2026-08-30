@@ -50,3 +50,11 @@ OPENAI_INSTRUCTION_ROLE=system
 ```
 
 Use `deepseek-v4-flash` for a fast smoke test or change `OPENAI_MODEL` to `deepseek-v4-pro`. The Adapter keeps `developer` as its default for OpenAI and only switches roles when `OPENAI_INSTRUCTION_ROLE=system` is configured.
+
+Run the real Tool-Use acceptance host with:
+
+```sh
+pnpm smoke:deepseek:tools
+```
+
+It uses an ignored `.nervus/deepseek-workspace`, executes `fs/read`, `shell/run`, `fs/write`, and a read-back verification, writes a JSONL SessionJournal, and checks restart recovery. The sanitized live receipt is recorded in [docs/evidence/deepseek-tool-use.md](./docs/evidence/deepseek-tool-use.md).

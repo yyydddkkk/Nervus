@@ -26,6 +26,7 @@ export interface UserModelMessage {
 export interface AssistantModelMessage {
   readonly role: "assistant";
   readonly content: readonly ContentBlock[];
+  readonly reasoning?: string;
   readonly toolCalls: readonly ToolCall[];
 }
 
