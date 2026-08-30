@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@nervus/capability-library": "workspace:*",
+    "@nervus/profile": "workspace:*",
     "nervus": "workspace:*"
   },
   "scripts": {

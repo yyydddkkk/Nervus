@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveCapabilityLibrary } from "@nervus/capability-library";
+import { resolveProfile } from "@nervus/profile";
 
 import {
   createKernel,
@@ -63,6 +64,7 @@ interface ParsedInvocation {
   readonly json: boolean;
   readonly capabilityRoots: readonly string[];
   readonly capabilities: readonly string[];
+  readonly profile?: string;
 }
 
 const CODING_SKILL_ID = "nervus/coding";
@@ -100,9 +102,31 @@ async function runInput(
   const stateDirectory =
     parsed.stateDirectory ?? defaultStateDirectory(parsed.workspace, env);
   await ensureStateWorkspace(stateDirectory, parsed.workspace);
+  const profile = parsed.profile
+    ? await resolveProfile({
+        file: parsed.profile,
+        roots: [dirname(parsed.profile)],
+        env,
+        runtime: { workspace: parsed.workspace },
+        contract: CODING_PROFILE_CONTRACT,
+      })
+    : undefined;
+  if (profile) {
+    await writeFile(
+      join(stateDirectory, "profile-resolution.json"),
+      `${JSON.stringify(profile.resolution, null, 2)}\n`,
+      "utf8",
+    );
+  }
+  const profileAssembly = profile?.assembly;
+  const profileModel = asRecord(profileAssembly?.model);
+  const profileCapabilities = asRecord(profileAssembly?.capabilities);
+  const profileAgent = asRecord(profileAssembly?.agent);
   const model = options.modelAdapter ?? createEnvironmentModel(env);
-  const modelName = options.modelAdapter
-    ? env.OPENAI_MODEL ?? "scripted"
+  const modelName = typeof profileModel?.name === "string"
+    ? profileModel.name
+    : options.modelAdapter
+      ? env.OPENAI_MODEL ?? "scripted"
     : requiredValue(env, "OPENAI_MODEL");
   const rootInstructions = await readOptionalFile(
     resolve(parsed.workspace, "AGENTS.md"),
@@ -166,9 +190,13 @@ async function runInput(
     roots: [
       fileURLToPath(new URL("../../../capabilities", import.meta.url)),
       ...parsed.capabilityRoots,
+      ...stringArray(profileCapabilities?.roots),
     ],
-    select: ["nervus/filesystem", ...parsed.capabilities],
-    configure: { "nervus/filesystem": { root: parsed.workspace } },
+    select: ["nervus/filesystem", ...parsed.capabilities, ...stringArray(profileCapabilities?.select)],
+    configure: {
+      "nervus/filesystem": { root: parsed.workspace },
+      ...asRecord(profileCapabilities?.configure),
+    },
   });
   await writeFile(
     join(stateDirectory, "capability-resolution.json"),
@@ -209,8 +237,12 @@ async function runInput(
           text: "You are a Coding Agent operating only inside the explicit workspace.",
         },
       ],
-      tools: ["fs/read", "fs/list", "fs/write", "shell/run"],
-      skills: [{ id: CODING_SKILL_ID, mode: "eager" }],
+      tools: stringArray(profileAgent?.tools).length
+        ? stringArray(profileAgent?.tools)
+        : ["fs/read", "fs/list", "fs/write", "shell/run"],
+      skills: Array.isArray(profileAgent?.skills)
+        ? profileAgent.skills as { id: string; mode: "eager" | "available" }[]
+        : [{ id: CODING_SKILL_ID, mode: "eager" }],
       limits: {
         maxSteps: 32,
         maxToolCalls: 128,
@@ -260,6 +292,7 @@ async function parseInvocation(
   let stateDirectory: string | undefined;
   let sessionId: string | undefined = resumedSessionId;
   let json = false;
+  let profile: string | undefined;
   const capabilityRoots: string[] = [];
   const capabilities: string[] = [];
   const input: string[] = [];
@@ -281,6 +314,10 @@ async function parseInvocation(
       const value = argv[++index];
       if (!value) throw new Error("--capability requires a Package ID");
       capabilities.push(value);
+    } else if (argument === "--profile") {
+      const value = argv[++index];
+      if (!value) throw new Error("--profile requires a path");
+      profile = resolve(value);
     } else if (argument?.startsWith("--")) {
       throw new Error(`Unknown option: ${argument}`);
     } else if (argument !== undefined) {
@@ -300,6 +337,7 @@ async function parseInvocation(
     json,
     capabilityRoots,
     capabilities,
+    ...(profile ? { profile } : {}),
   };
 }
 
@@ -514,3 +552,30 @@ function writeUsage(io: CodingCliIO): void {
     ].join("\n"),
   );
 }
+
+function asRecord(value: unknown): Record<string, any> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, any>
+    : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+const CODING_PROFILE_CONTRACT = {
+  hostType: "nervus-code",
+  runtime: { workspace: "string" },
+  schema: {
+    type: "object",
+    properties: {
+      profileVersion: { const: 1 }, id: { type: "string" }, extends: { type: "string" },
+      host: { type: "object", properties: { type: { const: "nervus-code" }, options: { type: "object", additionalProperties: true } }, required: ["type"], additionalProperties: false },
+      capabilities: { type: "object", additionalProperties: true },
+      model: { type: "object", properties: { name: { type: "string" }, apiKey: { "x-secret": true }, baseUrl: { type: "string" } }, additionalProperties: true },
+      agent: { type: "object", additionalProperties: true },
+      state: { type: "object", additionalProperties: true },
+    },
+    required: ["profileVersion", "id", "host", "model", "agent"], additionalProperties: false,
+  },
+} as const;

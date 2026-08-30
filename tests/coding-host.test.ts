@@ -657,4 +657,38 @@ describe("Reference Coding Host", () => {
       ]);
     }
   });
+
+  it("assembles Model, Capabilities, and AgentSpec from a strict Profile without persisting secrets", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "nervus-code-profile-workspace-"));
+    const stateDirectory = await mkdtemp(join(tmpdir(), "nervus-code-profile-state-"));
+    const profileDirectory = await mkdtemp(join(tmpdir(), "nervus-code-profiles-"));
+    const profile = join(profileDirectory, "coding.yaml");
+    await writeFile(profile, `profileVersion: 1\nid: coding-profile\nhost:\n  type: nervus-code\n  options: {}\ncapabilities:\n  roots: []\n  select: [nervus/filesystem]\n  configure:\n    nervus/filesystem:\n      root:\n        $runtime: workspace\nmodel:\n  name: profile-model\n  apiKey:\n    $env: API_KEY\nagent:\n  tools: [fs/list]\n  skills: []\n`, "utf8");
+    const io = captureIO();
+    const model: ModelAdapter = {
+      id: "scripted/coding-profile",
+      async *generate(request) {
+        expect(request.model).toBe("profile-model");
+        expect(request.tools.map((tool) => tool.id)).toEqual(["fs/list"]);
+        yield { type: "text-delta", delta: "profile assembled" };
+        yield { type: "response-completed" };
+      },
+    };
+    try {
+      await expect(runCodingCli([
+        "run", "--workspace", workspace, "--state-dir", stateDirectory,
+        "--session", "profile-session", "--profile", profile,
+        "profile task",
+      ], { io, env: { OPENAI_MODEL: "ignored", API_KEY: "secret-value" }, modelAdapter: model })).resolves.toBe(0);
+      const resolution = await readFile(join(stateDirectory, "profile-resolution.json"), "utf8");
+      expect(resolution).toContain("coding-profile");
+      expect(resolution).not.toContain("secret-value");
+    } finally {
+      await Promise.all([
+        rm(workspace, { recursive: true, force: true }),
+        rm(stateDirectory, { recursive: true, force: true }),
+        rm(profileDirectory, { recursive: true, force: true }),
+      ]);
+    }
+  });
 });

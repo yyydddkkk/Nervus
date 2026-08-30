@@ -6,6 +6,7 @@
     "declarationMap": false,
     "paths": {
       "@nervus/capability-library": ["../../packages/capability-library/src/index.ts"],
+      "@nervus/profile": ["../../packages/profile/src/index.ts"],
       "nervus": ["../../src/index.ts"]
     },
     "rootDir": "../.."
