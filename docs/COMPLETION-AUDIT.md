@@ -17,6 +17,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 | M6 Lifecycle hardening | Complete | `tests/lifecycle-hardening.test.ts` proves retries and attempt facts, Turn-wide provider leases, immediate Kernel cancellation, stable errors, forced timeouts, AgentSpec revisions, call terminal facts, and transient updates. |
 | M7 Live DeepSeek Tool use | Complete | `examples/deepseek-tool-agent.ts` and `docs/evidence/deepseek-tool-use.md` prove a real four-Step DeepSeek V4 run with parallel read/shell, write, read-back, JSONL persistence, leak scan, and restart recovery. |
 | M8 Interactive CLI host | Complete | `src/cli.ts`, `src/cli/cli.ts`, `tests/cli.test.ts`, and `docs/evidence/deepseek-cli.md` prove chat, resume, list, inspect, Ctrl-C cancellation, durable history, and live DeepSeek Tool use. |
+| M9 MCP Adapter | Complete | `src/mcp/mcp.ts`, `tests/mcp.test.ts`, and `docs/evidence/mcp-adapter.md` prove official SDK v2 discovery, Tool/Resource/Prompt mapping, Agent invocation, and lifecycle ownership. |
 
 ## Architecture requirements
 
@@ -38,6 +39,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 | Real adapters | OpenAI-compatible Chat Completions SSE and root-scoped file/shell Tools have deterministic tests. DeepSeek V4 has a live Tool-Use receipt covering `reasoning_content` replay, four ToolCalls, persisted usage, artifact verification, and restart recovery. |
 | Observability | Model text/reasoning/usage and Tool progress are transient Cordis events. Completed reasoning/usage and every lifecycle terminal are durable Session facts. |
 | Reference host | The packaged `nervus` CLI provides explicit workspaces, interactive and one-shot chat, durable Session resume/list/inspect, streamed updates, Tool summaries, and cancellation. |
+| MCP | The official MCP v2 Client is isolated behind a Cordis Plugin. stdio, Streamable HTTP, and connected-Client entry points map server capabilities into existing Tool, Skill, and Context seams. |
 
 ## Kernel invariant evidence
 
@@ -56,7 +58,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 
 These are not missing from M0–M6; the accepted blueprint explicitly defers them:
 
-- MCP Adapter and concrete Memory plugins.
+- Concrete Memory plugins.
 - Automatic history Compaction and a production HistoryCompactor.
 - YAML loading, overlays, HMR, UI, and distributed execution.
 - Permissions, approvals, sandboxing, and cross-model fallback.

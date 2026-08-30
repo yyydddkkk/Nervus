@@ -359,7 +359,7 @@ Original SessionEvents remain unchanged. History assembly uses the latest applic
 
 When Context reports `NeedsCompaction`, Agent Loop coordinates HistoryCompactor and retries pure assembly. HistoryCompactor may use a dedicated ModelRef and defaults to the Agent's ModelRef. If compaction retries fail, the Turn fails instead of silently dropping history.
 
-Automatic Compaction is designed but deferred beyond the first usable release.
+Automatic Compaction remains the next implementation milestone.
 
 ## 16. Cancellation, timeouts, and shutdown
 
@@ -484,7 +484,7 @@ The first usable release includes:
 
 Explicitly deferred:
 
-- MCP Adapter and Memory plugins.
+- Memory plugins.
 - Automatic Compaction.
 - YAML loader, overlays, and HMR.
 - UI and distributed execution.

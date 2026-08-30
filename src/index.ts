@@ -14,6 +14,14 @@ export {
   type CliIO,
   type RunNervusCliOptions,
 } from "./cli/cli.js";
+export {
+  mcpHttpPlugin,
+  mcpPlugin,
+  mcpStdioPlugin,
+  type McpHttpPluginOptions,
+  type McpPluginOptions,
+  type McpStdioPluginOptions,
+} from "./mcp/mcp.js";
 export type {
   AssembledContextBlock,
   ContextAssemblyReport,

@@ -1,5 +1,6 @@
 import { Service, type Context } from "cordis";
-import Ajv, { type ValidateFunction } from "ajv";
+import { type ValidateFunction } from "ajv";
+import Ajv2020 from "ajv/dist/2020.js";
 
 import type { ContentBlock } from "../domain/content.js";
 import { Semaphore } from "../kernel/semaphore.js";
@@ -61,7 +62,7 @@ interface RegisteredTool {
 export class ToolsModule extends Service {
   private readonly tools = new LeasedRegistry<RegisteredTool>();
   private readonly calls: Semaphore;
-  private readonly ajv = new Ajv({ allErrors: true, strict: false });
+  private readonly ajv = new Ajv2020({ allErrors: true, strict: false });
 
   constructor(ctx: Context, maxConcurrentCalls: number) {
     super(ctx, "tools");

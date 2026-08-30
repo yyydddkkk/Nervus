@@ -23,6 +23,7 @@ pnpm build
 - Memory and atomic JSONL SessionJournals with replay and interrupted recovery.
 - Layered ContextBlocks, model-aware budgets, truncation reports and Skills.
 - Scripted and OpenAI-compatible streaming Model Adapters.
+- MCP v2 Adapter for remote Tools, Resources, and Prompts over stdio or Streamable HTTP.
 - Root-scoped `fs/read`, `fs/write`, and `shell/run` reference Tools.
 - Durable retry/call facts, transient stream/progress events, cancellation and draining leases.
 
@@ -76,3 +77,23 @@ pnpm nervus:dev -- sessions resume my-project --workspace ./my-project
 ```
 
 The CLI streams model text, reports reasoning and Tool activity, persists JSONL under `<workspace>/.nervus/sessions`, and cancels the active Turn on Ctrl-C. Its live DeepSeek receipt is recorded in [docs/evidence/deepseek-cli.md](./docs/evidence/deepseek-cli.md).
+
+## MCP Adapter
+
+Mount an MCP server as a Cordis Plugin. Remote Tools become Nervus Tools, Resources become read-only Tools, and Prompts become parameterized Tools plus discoverable Skills.
+
+```ts
+import { createKernel, mcpStdioPlugin } from "nervus";
+
+const kernel = await createKernel({
+  plugins: [
+    mcpStdioPlugin({
+      id: "workspace",
+      command: "node",
+      args: ["./mcp-server.js"],
+    }),
+  ],
+});
+```
+
+Use `mcpHttpPlugin({ id, url, bearerToken })` for Streamable HTTP, or `mcpPlugin({ id, client })` when the application already owns a connected official MCP Client. Discovery occurs when the Plugin mounts, and the Client is closed when it unmounts unless `closeClient: false` is set.

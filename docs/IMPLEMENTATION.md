@@ -78,9 +78,19 @@ Status: complete.
 - Package a `nervus` executable while retaining an injectable `runNervusCli` test seam.
 - Validate new chat, resumed context, Tool use, failure visibility, and inspect against live DeepSeek.
 
+## M9: MCP Adapter
+
+Status: complete.
+
+- Build on the official MCP TypeScript SDK v2.
+- Map remote Tools, Resources, and Prompts into existing Nervus registries.
+- Support stdio, Streamable HTTP, and application-owned connected Clients.
+- Forward cancellation and progress, and bind Client cleanup to Cordis lifecycle.
+- Verify the protocol mapping against an in-memory official MCP server.
+
 ## Deferred
 
-- MCP adapter and Memory plugins.
+- Memory plugins.
 - Automatic history Compaction.
 - YAML loading, HMR, UI, multi-process or distributed execution.
 - Permissions, approvals, sandboxing, cross-model fallback, and npm publication.
