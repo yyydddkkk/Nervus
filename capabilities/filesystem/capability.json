@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "nervus/filesystem",
+  "version": "1.0.0",
+  "kind": "plugin",
+  "entry": "./index.js",
+  "configSchema": "./config.schema.json",
+  "provides": [
+    { "kind": "tool", "id": "fs/read" },
+    { "kind": "tool", "id": "fs/list" },
+    { "kind": "tool", "id": "fs/write" },
+    { "kind": "tool", "id": "shell/run" }
+  ],
+  "dependencies": []
+}

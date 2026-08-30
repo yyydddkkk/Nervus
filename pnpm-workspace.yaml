@@ -1,5 +1,6 @@
 packages:
   - apps/*
+  - packages/*
 
 minimumReleaseAgeExclude:
   - cordis@4.0.0-rc.9

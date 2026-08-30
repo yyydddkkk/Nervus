@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
+      "@nervus/capability-library": ["./packages/capability-library/src/index.ts"],
       "nervus": ["./src/index.ts"]
     },
     "strict": true,

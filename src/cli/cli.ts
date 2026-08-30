@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
+import { resolveCapabilityLibrary } from "@nervus/capability-library";
 import type { Plugin } from "cordis";
 
 import { OpenAICompatibleChatAdapter } from "../adapters/openai-compatible.js";
@@ -10,7 +12,6 @@ import { createKernel } from "../kernel/kernel.js";
 import { JsonlSessionJournal } from "../sessions/jsonl-journal.js";
 import { projectSession } from "../sessions/projection.js";
 import type { Session } from "../sessions/session.js";
-import { localToolsPlugin } from "../tools/local.js";
 
 export interface CliIO {
   write(text: string): void;
@@ -114,9 +115,14 @@ async function runChat(
       ctx.models.register(model);
     },
   };
+  const capabilities = await resolveCapabilityLibrary({
+    roots: [fileURLToPath(new URL("../../capabilities", import.meta.url))],
+    select: ["nervus/filesystem"],
+    configure: { "nervus/filesystem": { root: parsed.workspace } },
+  });
   const kernel = await createKernel({
     journal,
-    plugins: [modelPlugin, localToolsPlugin({ root: parsed.workspace })],
+    plugins: [modelPlugin, ...capabilities.plugins],
   });
   let session: Session | undefined;
   let active = false;

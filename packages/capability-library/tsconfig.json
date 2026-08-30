@@ -7,10 +7,7 @@
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src",
-    "paths": {
-      "@nervus/capability-library": ["../../packages/capability-library/dist/index.d.ts"],
-      "nervus": ["../../dist/index.d.ts"]
-    },
+    "paths": {},
     "types": ["node"]
   },
   "include": ["src/**/*.ts"]

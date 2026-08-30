@@ -2,11 +2,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { resolveCapabilityLibrary } from "@nervus/capability-library";
 
 import {
   createKernel,
   JsonlSessionJournal,
-  localToolsPlugin,
   OpenAICompatibleChatAdapter,
   type ContextContributor,
   type ContentBlock,
@@ -158,12 +160,17 @@ async function runInput(
   const journal = new JsonlSessionJournal({
     directory: stateDirectory,
   });
+  const capabilities = await resolveCapabilityLibrary({
+    roots: [fileURLToPath(new URL("../../../capabilities", import.meta.url))],
+    select: ["nervus/filesystem"],
+    configure: { "nervus/filesystem": { root: parsed.workspace } },
+  });
   const kernel = await createKernel({
     journal,
     plugins: [
       modelPlugin,
       codingPlugin,
-      localToolsPlugin({ root: parsed.workspace }),
+      ...capabilities.plugins,
     ],
   });
   let session: Session | undefined;

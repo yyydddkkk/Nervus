@@ -17,10 +17,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm build:kernel && pnpm build:coding-host",
+    "build": "pnpm build:capability-library && pnpm build:kernel && pnpm build:coding-host",
+    "build:capability-library": "pnpm --dir packages/capability-library build",
     "build:kernel": "tsc -p tsconfig.build.json",
     "build:coding-host": "pnpm --dir apps/coding-agent build",
-    "typecheck": "tsc -p tsconfig.json && pnpm --dir apps/coding-agent typecheck",
+    "typecheck": "tsc -p tsconfig.json && pnpm --dir packages/capability-library typecheck && pnpm --dir apps/coding-agent typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -35,6 +36,7 @@
   },
   "packageManager": "pnpm@11.21.0",
   "dependencies": {
+    "@nervus/capability-library": "workspace:*",
     "@modelcontextprotocol/client": "2.0.0",
     "ajv": "8.20.0",
     "cordis": "4.0.0-rc.9"

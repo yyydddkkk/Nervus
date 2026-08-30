@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   resolve: {
     alias: {
+      "@nervus/capability-library": fileURLToPath(
+        new URL("./packages/capability-library/src/index.ts", import.meta.url),
+      ),
       nervus: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
     },
     conditions: ["source"],
