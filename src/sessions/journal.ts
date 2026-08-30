@@ -10,6 +10,7 @@ export interface SessionJournal {
     events: readonly SessionEvent[],
   ): Promise<readonly SessionEventEnvelope[]>;
   read(sessionId: string): Promise<readonly SessionEventEnvelope[]>;
+  list(): Promise<readonly string[]>;
 }
 
 export class MemorySessionJournal implements SessionJournal {
@@ -47,5 +48,9 @@ export class MemorySessionJournal implements SessionJournal {
 
   async read(sessionId: string): Promise<readonly SessionEventEnvelope[]> {
     return this.#streams.get(sessionId) ?? [];
+  }
+
+  async list(): Promise<readonly string[]> {
+    return [...this.#streams.keys()].sort();
   }
 }

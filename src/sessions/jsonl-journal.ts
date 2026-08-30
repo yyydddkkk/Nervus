@@ -3,6 +3,7 @@ import {
   mkdir,
   open,
   readFile,
+  readdir,
   rename,
   unlink,
 } from "node:fs/promises";
@@ -58,6 +59,25 @@ export class JsonlSessionJournal implements SessionJournal {
   async read(sessionId: string): Promise<readonly SessionEventEnvelope[]> {
     await this.#tails.get(sessionId);
     return this.#readUnlocked(sessionId);
+  }
+
+  async list(): Promise<readonly string[]> {
+    await Promise.all(this.#tails.values());
+    let names: string[];
+    try {
+      names = await readdir(this.#directory);
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return [];
+      throw error;
+    }
+    return names
+      .filter((name) => name.endsWith(".jsonl"))
+      .map((name) =>
+        Buffer.from(name.slice(0, -".jsonl".length), "base64url").toString(
+          "utf8",
+        ),
+      )
+      .sort();
   }
 
   async #appendUnlocked(

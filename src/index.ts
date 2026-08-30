@@ -9,6 +9,11 @@ export {
   ScriptedModelAdapter,
   type ScriptedModelAdapterOptions,
 } from "./adapters/scripted.js";
+export {
+  runNervusCli,
+  type CliIO,
+  type RunNervusCliOptions,
+} from "./cli/cli.js";
 export type {
   AssembledContextBlock,
   ContextAssemblyReport,

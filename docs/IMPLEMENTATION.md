@@ -69,6 +69,15 @@ Status: complete.
 - Persist the Session to JSONL and verify an equivalent SessionSnapshot after restart.
 - Record a sanitized receipt and prove the API key is absent from runtime artifacts.
 
+## M8: Interactive CLI host
+
+Status: complete.
+
+- Add `chat` with one-shot and interactive input, streamed updates, and Ctrl-C cancellation.
+- Add durable Session create/resume plus `sessions list` and `sessions inspect`.
+- Package a `nervus` executable while retaining an injectable `runNervusCli` test seam.
+- Validate new chat, resumed context, Tool use, failure visibility, and inspect against live DeepSeek.
+
 ## Deferred
 
 - MCP adapter and Memory plugins.

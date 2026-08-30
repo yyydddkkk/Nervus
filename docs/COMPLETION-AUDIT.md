@@ -16,6 +16,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 | M5 Real Adapters | Complete | `tests/openai-compatible.test.ts`, `tests/local-tools.test.ts`, `examples/openai-compatible.ts`, and `.env.example`. |
 | M6 Lifecycle hardening | Complete | `tests/lifecycle-hardening.test.ts` proves retries and attempt facts, Turn-wide provider leases, immediate Kernel cancellation, stable errors, forced timeouts, AgentSpec revisions, call terminal facts, and transient updates. |
 | M7 Live DeepSeek Tool use | Complete | `examples/deepseek-tool-agent.ts` and `docs/evidence/deepseek-tool-use.md` prove a real four-Step DeepSeek V4 run with parallel read/shell, write, read-back, JSONL persistence, leak scan, and restart recovery. |
+| M8 Interactive CLI host | Complete | `src/cli.ts`, `src/cli/cli.ts`, `tests/cli.test.ts`, and `docs/evidence/deepseek-cli.md` prove chat, resume, list, inspect, Ctrl-C cancellation, durable history, and live DeepSeek Tool use. |
 
 ## Architecture requirements
 
@@ -36,6 +37,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M6 [imp
 | Errors | Public/invariant failures use stable KernelError codes; Tool operation errors remain ToolResults and Turn outcomes remain projected facts. |
 | Real adapters | OpenAI-compatible Chat Completions SSE and root-scoped file/shell Tools have deterministic tests. DeepSeek V4 has a live Tool-Use receipt covering `reasoning_content` replay, four ToolCalls, persisted usage, artifact verification, and restart recovery. |
 | Observability | Model text/reasoning/usage and Tool progress are transient Cordis events. Completed reasoning/usage and every lifecycle terminal are durable Session facts. |
+| Reference host | The packaged `nervus` CLI provides explicit workspaces, interactive and one-shot chat, durable Session resume/list/inspect, streamed updates, Tool summaries, and cancellation. |
 
 ## Kernel invariant evidence
 

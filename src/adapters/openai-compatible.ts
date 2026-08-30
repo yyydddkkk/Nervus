@@ -261,14 +261,20 @@ function toChatMessage(
     ...(replayReasoningContent && message.reasoning
       ? { reasoning_content: message.reasoning }
       : {}),
-    tool_calls: message.toolCalls.map((call) => ({
-      id: call.id,
-      type: "function",
-      function: {
-        name: toolNames.get(call.toolId) ?? encodeFallbackToolName(call.toolId),
-        arguments: JSON.stringify(call.arguments),
-      },
-    })),
+    ...(message.toolCalls.length > 0
+      ? {
+          tool_calls: message.toolCalls.map((call) => ({
+            id: call.id,
+            type: "function",
+            function: {
+              name:
+                toolNames.get(call.toolId) ??
+                encodeFallbackToolName(call.toolId),
+              arguments: JSON.stringify(call.arguments),
+            },
+          })),
+        }
+      : {}),
   };
 }
 

@@ -229,4 +229,49 @@ describe("OpenAI-compatible Chat Completions Adapter", () => {
     }
     expect(events).toEqual([{ type: "response-completed" }]);
   });
+
+  it("omits tool_calls for assistant messages without ToolCalls", async () => {
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        messages: readonly Record<string, unknown>[];
+      };
+      expect(body.messages[0]).toMatchObject({
+        role: "assistant",
+        content: "previous answer",
+      });
+      expect(body.messages[0]).not.toHaveProperty("tool_calls");
+      return new Response(splitStream("data: [DONE]\n\n"), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+    const adapter = new OpenAICompatibleChatAdapter({
+      id: "deepseek/no-empty-tool-calls",
+      baseUrl: "https://api.deepseek.com",
+      compatibility: "deepseek",
+      fetch,
+    });
+    const request: ModelRequest = {
+      model: "deepseek-v4-flash",
+      instructions: [],
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "previous answer" }],
+          reasoning: "previous reasoning",
+          toolCalls: [],
+        },
+        {
+          role: "user",
+          content: [{ type: "text", text: "continue" }],
+        },
+      ],
+      tools: [],
+    };
+    for await (const _event of adapter.generate(request, {
+      signal: new AbortController().signal,
+    })) {
+      // Consume the complete stream.
+    }
+  });
 });

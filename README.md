@@ -58,3 +58,21 @@ pnpm smoke:deepseek:tools
 ```
 
 It uses an ignored `.nervus/deepseek-workspace`, executes `fs/read`, `shell/run`, `fs/write`, and a read-back verification, writes a JSONL SessionJournal, and checks restart recovery. The sanitized live receipt is recorded in [docs/evidence/deepseek-tool-use.md](./docs/evidence/deepseek-tool-use.md).
+
+## CLI host
+
+Start an interactive DeepSeek Agent in an explicit workspace:
+
+```sh
+pnpm nervus:dev -- chat --workspace ./my-project --session my-project
+```
+
+Session operations:
+
+```sh
+pnpm nervus:dev -- sessions list --workspace ./my-project
+pnpm nervus:dev -- sessions inspect my-project --workspace ./my-project
+pnpm nervus:dev -- sessions resume my-project --workspace ./my-project
+```
+
+The CLI streams model text, reports reasoning and Tool activity, persists JSONL under `<workspace>/.nervus/sessions`, and cancels the active Turn on Ctrl-C. Its live DeepSeek receipt is recorded in [docs/evidence/deepseek-cli.md](./docs/evidence/deepseek-cli.md).
