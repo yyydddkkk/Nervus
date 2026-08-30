@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -262,6 +262,32 @@ describe("Nervus CLI", () => {
       expect(io.output.join("")).toContain("visible answer");
       expect(io.output.join("")).not.toContain("private internal summary");
       expect(io.errors.join("")).toContain("[compacting history]");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("assembles the generic Host from a strict Profile", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "nervus-cli-profile-"));
+    const profile = join(workspace, "profile.yaml");
+    await writeFile(profile, `profileVersion: 1\nid: generic-profile\nhost:\n  type: nervus-cli\n  options: {}\ncapabilities:\n  roots: []\n  select: [nervus/filesystem]\n  configure:\n    nervus/filesystem:\n      root:\n        $runtime: workspace\nmodel:\n  name: generic-profile-model\nagent:\n  tools: [fs/list]\n  skills: []\n`, "utf8");
+    const io = captureIO();
+    const model: ModelAdapter = {
+      id: "scripted/cli-profile",
+      async *generate(request) {
+        expect(request.model).toBe("generic-profile-model");
+        expect(request.tools.map((tool) => tool.id)).toEqual(["fs/list"]);
+        yield { type: "text-delta", delta: "generic profile" };
+        yield { type: "response-completed" };
+      },
+    };
+    try {
+      await expect(runNervusCli([
+        "chat", "--workspace", workspace, "--session", "generic-profile-session",
+        "--profile", profile, "profile task",
+      ], { io, env: { OPENAI_MODEL: "ignored" }, modelAdapter: model })).resolves.toBe(0);
+      const resolution = await readFile(join(workspace, ".nervus", "sessions", "profile-resolution.json"), "utf8");
+      expect(resolution).toContain("generic-profile");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

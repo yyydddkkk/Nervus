@@ -38,6 +38,7 @@
   "packageManager": "pnpm@11.21.0",
   "dependencies": {
     "@nervus/capability-library": "workspace:*",
+    "@nervus/profile": "workspace:*",
     "@modelcontextprotocol/client": "2.0.0",
     "ajv": "8.20.0",
     "cordis": "4.0.0-rc.9"

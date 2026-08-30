@@ -9,6 +9,7 @@
     "rootDir": "src",
     "paths": {
       "@nervus/capability-library": ["./packages/capability-library/dist/index.d.ts"]
+      ,"@nervus/profile": ["./packages/profile/dist/index.d.ts"]
     },
     "types": ["node"]
   },

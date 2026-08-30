@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveCapabilityLibrary } from "@nervus/capability-library";
+import { resolveProfile } from "@nervus/profile";
 import type { Plugin } from "cordis";
 
 import { OpenAICompatibleChatAdapter } from "../adapters/openai-compatible.js";
@@ -35,6 +36,7 @@ interface ParsedOptions {
   readonly prompt: string;
   readonly capabilityRoots: readonly string[];
   readonly capabilities: readonly string[];
+  readonly profile?: string;
 }
 
 export async function runNervusCli(
@@ -103,9 +105,18 @@ async function runChat(
 ): Promise<number> {
   await mkdir(parsed.workspace, { recursive: true });
   const env = options.env ?? process.env;
+  const profile = parsed.profile
+    ? await resolveProfile({ file: parsed.profile, roots: [dirname(parsed.profile)], env, runtime: { workspace: parsed.workspace }, contract: GENERIC_PROFILE_CONTRACT })
+    : undefined;
+  const profileAssembly = profile?.assembly;
+  const profileModel = asRecord(profileAssembly?.model);
+  const profileCapabilities = asRecord(profileAssembly?.capabilities);
+  const profileAgent = asRecord(profileAssembly?.agent);
   const model = options.modelAdapter ?? createEnvironmentModel(env);
-  const modelName = options.modelAdapter
-    ? env.OPENAI_MODEL ?? "scripted"
+  const modelName = typeof profileModel?.name === "string"
+    ? profileModel.name
+    : options.modelAdapter
+      ? env.OPENAI_MODEL ?? "scripted"
     : requiredValue(env, "OPENAI_MODEL");
   const journal = new JsonlSessionJournal({
     directory: parsed.sessionsDirectory,
@@ -121,9 +132,10 @@ async function runChat(
     roots: [
       fileURLToPath(new URL("../../capabilities", import.meta.url)),
       ...parsed.capabilityRoots,
+      ...stringArray(profileCapabilities?.roots),
     ],
-    select: ["nervus/filesystem", ...parsed.capabilities],
-    configure: { "nervus/filesystem": { root: parsed.workspace } },
+    select: ["nervus/filesystem", ...parsed.capabilities, ...stringArray(profileCapabilities?.select)],
+    configure: { "nervus/filesystem": { root: parsed.workspace }, ...asRecord(profileCapabilities?.configure) },
   });
   await mkdir(parsed.sessionsDirectory, { recursive: true });
   await writeFile(
@@ -131,6 +143,9 @@ async function runChat(
     `${JSON.stringify(capabilities.resolution, null, 2)}\n`,
     "utf8",
   );
+  if (profile) {
+    await writeFile(resolve(parsed.sessionsDirectory, "profile-resolution.json"), `${JSON.stringify(profile.resolution, null, 2)}\n`, "utf8");
+  }
   const kernel = await createKernel({
     journal,
     plugins: [modelPlugin, ...capabilities.plugins],
@@ -184,7 +199,8 @@ async function runChat(
           ].join(" "),
         },
       ],
-      tools: ["fs/read", "fs/list", "fs/write", "shell/run"],
+      tools: stringArray(profileAgent?.tools).length ? stringArray(profileAgent?.tools) : ["fs/read", "fs/list", "fs/write", "shell/run"],
+      ...(Array.isArray(profileAgent?.skills) ? { skills: profileAgent.skills as { id: string; mode: "eager" | "available" }[] } : {}),
       limits: {
         maxSteps: 24,
         maxToolCalls: 64,
@@ -277,6 +293,7 @@ function parseOptions(
   let sessionsDirectory: string | undefined;
   let sessionId = defaults.sessionId;
   let createNew = false;
+  let profile: string | undefined;
   const prompt: string[] = [];
   const capabilityRoots: string[] = [];
   const capabilities: string[] = [];
@@ -299,6 +316,10 @@ function parseOptions(
       const value = argv[++index];
       if (!value) throw new Error("--capability requires a Package ID");
       capabilities.push(value);
+    } else if (argument === "--profile") {
+      const value = argv[++index];
+      if (!value) throw new Error("--profile requires a path");
+      profile = resolve(value);
     } else if (argument?.startsWith("--")) {
       throw new Error(`Unknown option: ${argument}`);
     } else if (argument !== undefined) {
@@ -318,6 +339,7 @@ function parseOptions(
     prompt: prompt.join(" "),
     capabilityRoots,
     capabilities,
+    ...(profile ? { profile } : {}),
   };
 }
 
@@ -410,3 +432,25 @@ function writeUsage(io: CliIO): void {
     ].join("\n"),
   );
 }
+
+function asRecord(value: unknown): Record<string, any> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : undefined;
+}
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+const GENERIC_PROFILE_CONTRACT = {
+  hostType: "nervus-cli",
+  runtime: { workspace: "string" },
+  schema: {
+    type: "object",
+    properties: {
+      profileVersion: { const: 1 }, id: { type: "string" }, extends: { type: "string" },
+      host: { type: "object", properties: { type: { const: "nervus-cli" }, options: { type: "object", additionalProperties: true } }, required: ["type"], additionalProperties: false },
+      capabilities: { type: "object", additionalProperties: true },
+      model: { type: "object", properties: { name: { type: "string" }, apiKey: { "x-secret": true }, baseUrl: { type: "string" } }, additionalProperties: true },
+      agent: { type: "object", additionalProperties: true }, state: { type: "object", additionalProperties: true },
+    },
+    required: ["profileVersion", "id", "host", "model", "agent"], additionalProperties: false,
+  },
+} as const;
