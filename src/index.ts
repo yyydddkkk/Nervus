@@ -31,10 +31,12 @@ export type {
 export {
   Session,
   type CreateSessionOptions,
+  type OpenSessionOptions,
   type SessionInput,
   type TurnResult,
 } from "./sessions/session.js";
 export type {
+  PendingInput,
   SessionSnapshot,
   TurnSnapshot,
 } from "./sessions/projection.js";
@@ -46,6 +48,10 @@ export {
   MemorySessionJournal,
   type SessionJournal,
 } from "./sessions/journal.js";
+export {
+  JsonlSessionJournal,
+  type JsonlSessionJournalOptions,
+} from "./sessions/jsonl-journal.js";
 export type {
   ToolDefinition,
   ToolExecutionContext,

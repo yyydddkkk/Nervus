@@ -3,8 +3,10 @@ import { Context, type Plugin } from "cordis";
 import type { Agent, AgentSpec } from "../agents/agent.js";
 import type {
   CreateSessionOptions,
+  OpenSessionOptions,
   Session,
 } from "../sessions/session.js";
+import type { SessionJournal } from "../sessions/journal.js";
 import { corePlugin } from "./core-plugin.js";
 import {
   resolveKernelRuntimeOptions,
@@ -18,6 +20,7 @@ export interface KernelOptions {
   plugins?: readonly Plugin<void>[];
   timeouts?: Partial<CallTimeouts>;
   concurrency?: Partial<ConcurrencyLimits>;
+  journal?: SessionJournal;
 }
 
 export class Kernel {
@@ -42,6 +45,11 @@ export class Kernel {
   async createSession(options: CreateSessionOptions): Promise<Session> {
     this.#assertReady();
     return this.context.sessions.create(options);
+  }
+
+  async openSession(options: OpenSessionOptions): Promise<Session> {
+    this.#assertReady();
+    return this.context.sessions.open(options);
   }
 
   dispose(): Promise<void> {

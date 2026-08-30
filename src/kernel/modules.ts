@@ -26,5 +26,9 @@ export function mountRequiredModules(
   new ContextModule(ctx);
   new SkillsModule(ctx);
   new AgentsModule(ctx, options.timeouts);
-  new SessionsModule(ctx, undefined, options.concurrency.maxActiveTurns);
+  new SessionsModule(
+    ctx,
+    options.journal,
+    options.concurrency.maxActiveTurns,
+  );
 }

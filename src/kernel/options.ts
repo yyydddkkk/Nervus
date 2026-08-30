@@ -12,6 +12,7 @@ export interface ConcurrencyLimits {
 export interface KernelRuntimeOptions {
   readonly timeouts: CallTimeouts;
   readonly concurrency: ConcurrencyLimits;
+  readonly journal: SessionJournal;
 }
 
 const DEFAULT_TIMEOUTS: CallTimeouts = {
@@ -28,6 +29,7 @@ const DEFAULT_CONCURRENCY: ConcurrencyLimits = {
 export function resolveKernelRuntimeOptions(options: {
   readonly timeouts?: Partial<CallTimeouts>;
   readonly concurrency?: Partial<ConcurrencyLimits>;
+  readonly journal?: SessionJournal;
 }): KernelRuntimeOptions {
   return {
     timeouts: Object.freeze({ ...DEFAULT_TIMEOUTS, ...options.timeouts }),
@@ -35,5 +37,10 @@ export function resolveKernelRuntimeOptions(options: {
       ...DEFAULT_CONCURRENCY,
       ...options.concurrency,
     }),
+    journal: options.journal ?? new MemorySessionJournal(),
   };
 }
+import {
+  MemorySessionJournal,
+  type SessionJournal,
+} from "../sessions/journal.js";

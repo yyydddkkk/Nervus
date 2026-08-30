@@ -83,6 +83,11 @@ export type SessionEvent =
       readonly turnId: string;
       readonly error: string;
     }
+  | {
+      readonly type: "turn/interrupted";
+      readonly turnId: string;
+      readonly reason: string;
+    }
   | { readonly type: "turn/exhausted"; readonly turnId: string };
 
 export interface SessionEventEnvelope<

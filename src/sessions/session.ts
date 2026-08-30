@@ -11,7 +11,11 @@ import {
   MemorySessionJournal,
   type SessionJournal,
 } from "./journal.js";
-import { projectSession, type SessionSnapshot } from "./projection.js";
+import {
+  projectPendingInputs,
+  projectSession,
+  type SessionSnapshot,
+} from "./projection.js";
 
 export interface SessionInput {
   readonly content: readonly ContentBlock[];
@@ -28,6 +32,10 @@ export interface CreateSessionOptions {
   readonly agentId: string;
 }
 
+export interface OpenSessionOptions {
+  readonly id: string;
+}
+
 export class Session {
   readonly id: string;
   readonly agentId: string;
@@ -37,6 +45,7 @@ export class Session {
   #revision: number;
   #appendTail: Promise<void> = Promise.resolve();
   #turnTail: Promise<void> = Promise.resolve();
+  readonly #scheduledInputs = new Map<string, Promise<TurnResult>>();
   #activeTurn: { readonly id: string; readonly controller: AbortController } | null =
     null;
 
@@ -62,6 +71,30 @@ export class Session {
       inputId,
       content: input.content,
     });
+    return this.#scheduleInput(inputId, input, accepted);
+  }
+
+  async resumePendingInputs(): Promise<readonly TurnResult[]> {
+    const pending = projectPendingInputs(await this.#journal.read(this.id));
+    return Promise.all(
+      pending.map((input) =>
+        this.#scheduleInput(
+          input.id,
+          { content: input.content },
+          Promise.resolve(),
+        ),
+      ),
+    );
+  }
+
+  #scheduleInput(
+    inputId: string,
+    input: SessionInput,
+    accepted: Promise<void>,
+  ): Promise<TurnResult> {
+    const scheduled = this.#scheduledInputs.get(inputId);
+    if (scheduled) return scheduled;
+
     const previousTurn = this.#turnTail;
     const turn = (async () => {
       await accepted;
@@ -72,6 +105,8 @@ export class Session {
       () => undefined,
       () => undefined,
     );
+    this.#scheduledInputs.set(inputId, turn);
+    void turn.finally(() => this.#scheduledInputs.delete(inputId));
     return turn;
   }
 
@@ -277,6 +312,42 @@ export class SessionsModule extends Service {
       options,
       this.journal,
       created.length,
+      this.turns,
+    );
+    this.sessions.set(options.id, session);
+    return session;
+  }
+
+  async open(options: OpenSessionOptions): Promise<Session> {
+    const alreadyOpen = this.sessions.get(options.id);
+    if (alreadyOpen) return alreadyOpen;
+
+    let events = await this.journal.read(options.id);
+    const created = events.find(
+      (event) => event.payload.type === "session/created",
+    );
+    if (!created || created.payload.type !== "session/created") {
+      throw new Error(`session does not exist: ${options.id}`);
+    }
+    this.ctx.agents.get(created.payload.agentId);
+
+    const snapshot = projectSession(options.id, events);
+    if (snapshot.latestTurn?.status === "active") {
+      await this.journal.append(options.id, events.length, [
+        {
+          type: "turn/interrupted",
+          turnId: snapshot.latestTurn.id,
+          reason: "Kernel restarted before the Turn reached a terminal event",
+        },
+      ]);
+      events = await this.journal.read(options.id);
+    }
+
+    const session = new Session(
+      this.ctx,
+      { id: options.id, agentId: created.payload.agentId },
+      this.journal,
+      events.length,
       this.turns,
     );
     this.sessions.set(options.id, session);

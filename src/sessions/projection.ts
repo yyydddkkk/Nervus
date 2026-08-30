@@ -8,7 +8,8 @@ export interface TurnSnapshot {
     | "completed"
     | "exhausted"
     | "cancelled"
-    | "failed";
+    | "failed"
+    | "interrupted";
   readonly output: readonly ContentBlock[];
 }
 
@@ -21,6 +22,11 @@ export interface SessionSnapshot {
   readonly latestTurn: TurnSnapshot | null;
 }
 
+export interface PendingInput {
+  readonly id: string;
+  readonly content: readonly ContentBlock[];
+}
+
 export function projectSession(
   sessionId: string,
   events: readonly SessionEventEnvelope[],
@@ -28,7 +34,7 @@ export function projectSession(
   let agentId: string | undefined;
   let turnCount = 0;
   let latestTurn: TurnSnapshot | null = null;
-  const pendingInputs = new Set<string>();
+  const pendingInputs = new Map<string, readonly ContentBlock[]>();
 
   for (const envelope of events) {
     const event = envelope.payload;
@@ -37,7 +43,7 @@ export function projectSession(
         agentId = event.agentId;
         break;
       case "input/accepted":
-        pendingInputs.add(event.inputId);
+        pendingInputs.set(event.inputId, event.content);
         break;
       case "turn/started":
         pendingInputs.delete(event.inputId);
@@ -72,6 +78,13 @@ export function projectSession(
           output: [],
         };
         break;
+      case "turn/interrupted":
+        latestTurn = {
+          id: event.turnId,
+          status: "interrupted",
+          output: [],
+        };
+        break;
     }
   }
 
@@ -87,4 +100,19 @@ export function projectSession(
     turnCount,
     latestTurn,
   };
+}
+
+export function projectPendingInputs(
+  events: readonly SessionEventEnvelope[],
+): readonly PendingInput[] {
+  const pending = new Map<string, readonly ContentBlock[]>();
+  for (const envelope of events) {
+    const event = envelope.payload;
+    if (event.type === "input/accepted") {
+      pending.set(event.inputId, event.content);
+    } else if (event.type === "turn/started") {
+      pending.delete(event.inputId);
+    }
+  }
+  return [...pending].map(([id, content]) => ({ id, content }));
 }

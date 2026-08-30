@@ -29,6 +29,8 @@ Status: complete.
 
 ## M3: Durable Sessions
 
+Status: complete.
+
 - Add the JSONL SessionJournal adapter with atomic batches and expected revisions.
 - Replay Session views and restore queued Inputs after restart.
 - Mark active Turns as interrupted rather than resuming external work automatically.
