@@ -16,6 +16,13 @@ import {
   type SessionEventEnvelope,
 } from "nervus";
 
+export {
+  classifyShellCommand,
+  collectCodingMetrics,
+  type CodingMetrics,
+  type ShellPurpose,
+} from "./metrics.js";
+
 export interface CodingCliIO {
   write(value: string): void;
   writeError(value: string): void;

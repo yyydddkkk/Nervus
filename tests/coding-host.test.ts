@@ -61,6 +61,7 @@ describe("Reference Coding Host", () => {
       async *generate(request) {
         expect(request.tools.map((tool) => tool.id)).toEqual([
           "fs/read",
+          "fs/list",
           "fs/write",
           "shell/run",
         ]);

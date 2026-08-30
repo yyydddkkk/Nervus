@@ -9,7 +9,9 @@ import {
 import { join, resolve } from "node:path";
 
 import {
+  collectCodingMetrics,
   runCodingCli,
+  type CodingMetrics,
   type CodingCliIO,
   type CodingRunRecord,
 } from "../apps/coding-agent/src/index.js";
@@ -37,6 +39,7 @@ interface TaskReceipt {
   readonly usage: CodingRunRecord["usage"];
   readonly changedFiles: readonly string[];
   readonly verificationPassed: boolean;
+  readonly metrics: CodingMetrics;
   readonly scopedInstructionsReadBeforeEdit?: boolean;
 }
 
@@ -237,6 +240,7 @@ function taskReceipt(
   scopedInstructionsReadBeforeEdit?: boolean,
 ): TaskReceipt {
   const calls = toolCalls(events);
+  const metrics = collectCodingMetrics(events);
   return {
     sessionId: record.sessionId,
     status: record.status,
@@ -246,6 +250,7 @@ function taskReceipt(
     usage: record.usage,
     changedFiles,
     verificationPassed,
+    metrics,
     ...(scopedInstructionsReadBeforeEdit === undefined
       ? {}
       : { scopedInstructionsReadBeforeEdit }),
