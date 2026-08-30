@@ -1,5 +1,56 @@
 export { createKernel, Kernel, type KernelOptions, type KernelState } from "./kernel/kernel.js";
 export {
+  Agent,
+  type AgentSnapshot,
+  type AgentSpec,
+  type ModelRef,
+  type TurnLimits,
+} from "./agents/agent.js";
+export type {
+  ContentBlock,
+  ImageContentBlock,
+  JsonContentBlock,
+  JsonValue,
+  ResourceContentBlock,
+  TextContentBlock,
+} from "./domain/content.js";
+export type {
+  AssistantModelMessage,
+  ModelAdapter,
+  ModelEvent,
+  ModelMessage,
+  ModelRequest,
+  ModelResponse,
+  ModelToolDefinition,
+  ToolCall,
+  ToolModelMessage,
+  UserModelMessage,
+} from "./models/model.js";
+export {
+  Session,
+  type CreateSessionOptions,
+  type SessionInput,
+  type TurnResult,
+} from "./sessions/session.js";
+export type {
+  SessionSnapshot,
+  TurnSnapshot,
+} from "./sessions/projection.js";
+export type {
+  SessionEvent,
+  SessionEventEnvelope,
+} from "./sessions/events.js";
+export {
+  MemorySessionJournal,
+  type SessionJournal,
+} from "./sessions/journal.js";
+export type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolExecutionResult,
+  ToolResult,
+} from "./tools/tool.js";
+export {
   AgentsModule,
   ContextModule,
   ModelsModule,

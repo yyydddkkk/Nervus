@@ -201,6 +201,7 @@ Initial durable event families include:
 ```text
 input/accepted
 turn/started | completed | exhausted | cancelled | interrupted | failed
+user/message
 step/started | completed
 model/call-started | attempt-started | attempt-failed | call-completed | call-failed
 assistant/message

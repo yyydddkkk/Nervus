@@ -4,12 +4,16 @@ Nervus is an embeddable TypeScript Agent Kernel built on a frozen Cordis release
 
 ## M0: Foundation
 
+Status: complete.
+
 - Configure Node.js 22+, pnpm, TypeScript, Vitest, and ESM output.
 - Pin Cordis exactly.
 - Bootstrap the required Kernel modules through Cordis.
 - Establish the public Kernel facade and lifecycle smoke tests.
 
 ## M1: First complete Turn
+
+Status: complete.
 
 - Add AgentSpec resolution and AgentSnapshot creation.
 - Add an in-memory SessionJournal and deterministic Session projection.
