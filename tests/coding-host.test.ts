@@ -682,6 +682,7 @@ describe("Reference Coding Host", () => {
       ], { io, env: { OPENAI_MODEL: "ignored", API_KEY: "secret-value" }, modelAdapter: model })).resolves.toBe(0);
       const resolution = await readFile(join(stateDirectory, "profile-resolution.json"), "utf8");
       expect(resolution).toContain("coding-profile");
+      expect(resolution).toContain("nervus/filesystem");
       expect(resolution).not.toContain("secret-value");
     } finally {
       await Promise.all([

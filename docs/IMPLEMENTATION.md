@@ -149,7 +149,7 @@ Detailed blueprint: [plans/m12-coding-host-stabilization.md](./plans/m12-coding-
 
 ## M13: Capability Library
 
-Status: planned; accepted design, implementation not started.
+Status: complete.
 
 Detailed blueprint: [plans/m13-capability-library.md](./plans/m13-capability-library.md).
 
@@ -177,7 +177,7 @@ Detailed blueprint: [plans/m13-capability-library.md](./plans/m13-capability-lib
 
 ## M14: Profile and YAML assembly
 
-Status: planned; accepted design, implementation not started.
+Status: complete.
 
 Detailed blueprint: [plans/m14-profile-yaml.md](./plans/m14-profile-yaml.md).
 

@@ -136,6 +136,29 @@ describe("Capability Library", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("rejects invalid configuration and invalid Factory exports", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nervus-cap-validation-"));
+    try {
+      await capability(root, "configured", {
+        schemaVersion: 1, id: "demo/configured", version: "1.0.0", kind: "plugin",
+        entry: "./index.js", configSchema: "./config.schema.json", provides: [], dependencies: [],
+      }, `export default () => ({ name: "configured", apply() {} });`, {
+        type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false,
+      });
+      await expect(resolveCapabilityLibrary({ roots: [root], select: ["demo/configured"] }))
+        .rejects.toMatchObject({ code: "INVALID_CONFIG" });
+
+      await capability(root, "invalid-factory", {
+        schemaVersion: 1, id: "demo/invalid-factory", version: "1.0.0", kind: "plugin",
+        entry: "./index.js", provides: [], dependencies: [],
+      }, `export default 42;`);
+      await expect(resolveCapabilityLibrary({ roots: [root], select: ["demo/invalid-factory"] }))
+        .rejects.toMatchObject({ code: "INVALID_FACTORY" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 async function capability(

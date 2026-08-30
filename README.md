@@ -124,3 +124,15 @@ Use `mcpHttpPlugin({ id, url, bearerToken })` for Streamable HTTP, or `mcpPlugin
 When Context assembly reports that prior history would be dropped, the Agent Loop first asks the Agent's Model to summarize the largest complete range that fits. Nervus atomically records the summary with its covered Session sequence and source ModelCall, then reassembles from that summary plus later events. Original SessionEvents are never deleted.
 
 Compaction calls use the normal timeout, retry, cancellation, concurrency, usage, and model-attempt limits. If no safe source range fits or the Model cannot produce a summary, the Turn fails explicitly instead of continuing with silently missing history.
+
+## Capability Library
+
+`@nervus/capability-library` resolves trusted local Capability Packages from explicit roots. Packages use strict `capability.json` manifests, dependency/Bundle resolution, optional config Schema, and `CapabilityFactory(config) -> Cordis Plugin`. Both existing Hosts load the shared `nervus/filesystem` Package and persist `capability-resolution.json`.
+
+Additional packages can be enabled repeatedly with `--capability-root <path>` and `--capability <id>`. Installation only makes a Package resolvable; selection remains explicit.
+
+## Profile and YAML
+
+`@nervus/profile` loads a strict YAML 1.2 Profile with one parent, ordered overlays, structured `$env`/`$runtime` references, secret redaction, and stable ProfileError codes. Both Hosts accept `--profile <file>` and persist a redacted `profile-resolution.json` containing the corresponding CapabilityResolution.
+
+Profile files are read once at Host startup. They do not contain tasks, Session history, Package installation, Agent workflows, or literal secret values.

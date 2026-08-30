@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveCapabilityLibrary } from "@nervus/capability-library";
-import { resolveProfile } from "@nervus/profile";
+import { composeProfileResolution, resolveProfile } from "@nervus/profile";
 
 import {
   createKernel,
@@ -111,13 +111,6 @@ async function runInput(
         contract: CODING_PROFILE_CONTRACT,
       })
     : undefined;
-  if (profile) {
-    await writeFile(
-      join(stateDirectory, "profile-resolution.json"),
-      `${JSON.stringify(profile.resolution, null, 2)}\n`,
-      "utf8",
-    );
-  }
   const profileAssembly = profile?.assembly;
   const profileModel = asRecord(profileAssembly?.model);
   const profileCapabilities = asRecord(profileAssembly?.capabilities);
@@ -198,6 +191,13 @@ async function runInput(
       ...asRecord(profileCapabilities?.configure),
     },
   });
+  if (profile) {
+    await writeFile(
+      join(stateDirectory, "profile-resolution.json"),
+      `${JSON.stringify(composeProfileResolution(profile.resolution, capabilities.resolution), null, 2)}\n`,
+      "utf8",
+    );
+  }
   await writeFile(
     join(stateDirectory, "capability-resolution.json"),
     `${JSON.stringify(capabilities.resolution, null, 2)}\n`,

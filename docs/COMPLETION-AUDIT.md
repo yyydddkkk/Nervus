@@ -1,8 +1,8 @@
 # Nervus completion audit
 
-Audit date: 2026-08-30.
+Audit date: 2026-08-31.
 
-Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M11 [implementation plan](./IMPLEMENTATION.md). This audit distinguishes implemented requirements from items explicitly deferred by the blueprint.
+Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0–M11 plus M13–M14 [implementation milestones](./IMPLEMENTATION.md). M12 remains explicitly in progress.
 
 ## Milestone evidence
 
@@ -20,6 +20,8 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M11 [im
 | M9 MCP Adapter | Complete | `src/mcp/mcp.ts`, `tests/mcp.test.ts`, and `docs/evidence/mcp-adapter.md` prove official SDK v2 discovery, Tool/Resource/Prompt mapping, Agent invocation, and lifecycle ownership. |
 | M10 Automatic history Compaction | Complete | `src/context/compactor.ts`, `src/context/context.ts`, `tests/compaction.test.ts`, and `docs/evidence/automatic-compaction.md` prove pre-drop detection, durable summaries, restart reuse, model-attempt accounting, and explicit failure. |
 | M11 Reference Coding Host | Complete | `apps/coding-agent`, `tests/coding-host.test.ts`, `examples/deepseek-coding-host.ts`, and `docs/evidence/deepseek-coding-host.md` prove package-root integration, run/resume, external state partitioning, JSON output, scoped repository instructions, real edits, independent verification, and two live DeepSeek tasks. |
+| M13 Capability Library | Complete | `packages/capability-library`, `capabilities/filesystem`, `tests/capability-library.test.ts`, and `docs/evidence/capability-library.md` prove strict manifests, explicit resolution, Bundle/dependency ordering, configuration, path/error contracts, stable Resolution, and reuse by both Hosts. |
+| M14 Profile/YAML | Complete | `packages/profile`, both Host `--profile` paths, `tests/profile-loader.test.ts`, Host integration tests, and `docs/evidence/profile-yaml.md` prove strict YAML, inheritance/overlay semantics, runtime/env references, secret redaction, Resolution composition, and startup-only assembly. |
 
 ## Architecture requirements
 
@@ -44,6 +46,8 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M11 [im
 | MCP | The official MCP v2 Client is isolated behind a Cordis Plugin. stdio, Streamable HTTP, and connected-Client entry points map server capabilities into existing Tool, Skill, and Context seams. |
 | Compaction | Context reports `needsCompaction`; the Agent Loop durably runs a model-backed summary call, records `history/compacted`, and retries assembly from the summary plus later messages without deleting source events. |
 | Coding Host | The private `@nervus/coding-agent` workspace package exposes `nervus-code` and `runCodingCli`, imports Nervus only from its package root, stores Journals outside target repositories, and validates the existing Kernel through real coding workflows. |
+| Capability Library | A Host-side resolver converts explicit trusted Package selections into standard Cordis Plugins and a serializable CapabilityResolution; Kernel registries and lifecycle remain authoritative after resolution. |
+| Profile | A Host-side strict YAML loader produces one frozen assembly and redacted ProfileResolution before Plugin effects; the Kernel does not parse or reload configuration files. |
 
 ## Kernel invariant evidence
 
@@ -63,7 +67,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and M0–M11 [im
 These are not missing from M0–M11; the accepted blueprint explicitly defers them:
 
 - Concrete Memory plugins.
-- YAML loading, overlays, HMR, UI, and distributed execution.
+- HMR, UI, and distributed execution.
 - Permissions, approvals, sandboxing, and cross-model fallback.
 - Public npm publication and API compatibility guarantees.
 

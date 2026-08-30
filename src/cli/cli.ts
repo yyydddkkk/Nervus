@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveCapabilityLibrary } from "@nervus/capability-library";
-import { resolveProfile } from "@nervus/profile";
+import { composeProfileResolution, resolveProfile } from "@nervus/profile";
 import type { Plugin } from "cordis";
 
 import { OpenAICompatibleChatAdapter } from "../adapters/openai-compatible.js";
@@ -144,7 +144,7 @@ async function runChat(
     "utf8",
   );
   if (profile) {
-    await writeFile(resolve(parsed.sessionsDirectory, "profile-resolution.json"), `${JSON.stringify(profile.resolution, null, 2)}\n`, "utf8");
+    await writeFile(resolve(parsed.sessionsDirectory, "profile-resolution.json"), `${JSON.stringify(composeProfileResolution(profile.resolution, capabilities.resolution), null, 2)}\n`, "utf8");
   }
   const kernel = await createKernel({
     journal,

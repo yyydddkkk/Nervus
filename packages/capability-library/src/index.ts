@@ -6,6 +6,35 @@ import { pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { Plugin } from "cordis";
 
+const manifestAjv = new Ajv2020({ allErrors: true, strict: false });
+const validateManifest = manifestAjv.compile({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        schemaVersion: { const: 1 }, id: { type: "string", minLength: 1 },
+        version: { type: "string", minLength: 1 }, kind: { const: "plugin" },
+        entry: { type: "string", minLength: 1 }, configSchema: { type: "string", minLength: 1 },
+        provides: { type: "array", items: { type: "object", properties: { kind: { type: "string", minLength: 1 }, id: { type: "string", minLength: 1 } }, required: ["kind", "id"], additionalProperties: false } },
+        dependencies: { type: "array", items: { type: "string", minLength: 1 }, uniqueItems: true },
+      },
+      required: ["schemaVersion", "id", "version", "kind", "entry", "provides", "dependencies"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        schemaVersion: { const: 1 }, id: { type: "string", minLength: 1 },
+        version: { type: "string", minLength: 1 }, kind: { const: "bundle" },
+        members: { type: "array", items: { type: "string", minLength: 1 }, uniqueItems: true },
+      },
+      required: ["schemaVersion", "id", "version", "kind", "members"],
+      additionalProperties: false,
+    },
+  ],
+});
+
 export type CapabilityLibraryErrorCode =
   | "INVALID_MANIFEST"
   | "DUPLICATE_PACKAGE_ID"
@@ -166,16 +195,11 @@ export async function resolveCapabilityLibrary(
 function parseManifest(source: string, directory: string): Manifest {
   let value: unknown;
   try { value = JSON.parse(source); } catch (error) { throw new CapabilityLibraryError("INVALID_MANIFEST", `Invalid JSON: ${directory}`, { cause: error }); }
-  if (!value || typeof value !== "object") throw new CapabilityLibraryError("INVALID_MANIFEST", `Invalid manifest: ${directory}`);
-  const item = value as Record<string, unknown>;
-  if (item.schemaVersion !== 1 || typeof item.id !== "string" || typeof item.version !== "string" || (item.kind !== "plugin" && item.kind !== "bundle")) {
-    throw new CapabilityLibraryError("INVALID_MANIFEST", `Invalid manifest fields: ${directory}`);
-  }
+  if (!validateManifest(value)) throw new CapabilityLibraryError("INVALID_MANIFEST", `Invalid manifest: ${directory}: ${manifestAjv.errorsText(validateManifest.errors)}`);
+  const item = value as unknown as Record<string, unknown>;
   if (item.kind === "bundle") {
-    if (!Array.isArray(item.members) || !item.members.every((x) => typeof x === "string")) throw new CapabilityLibraryError("INVALID_MANIFEST", `Invalid Bundle: ${item.id}`);
     return item as unknown as BundleManifest;
   }
-  if (typeof item.entry !== "string" || !Array.isArray(item.provides) || !Array.isArray(item.dependencies)) throw new CapabilityLibraryError("INVALID_MANIFEST", `Invalid Plugin Package: ${item.id}`);
   return item as unknown as PluginManifest;
 }
 

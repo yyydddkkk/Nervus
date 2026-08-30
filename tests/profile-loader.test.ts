@@ -90,4 +90,32 @@ describe("Profile Loader", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("rejects inheritance cycles, Root escape, missing env, and secret literals", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nervus-profile-matrix-"));
+    const outside = await mkdtemp(join(tmpdir(), "nervus-profile-outside-"));
+    try {
+      await writeFile(join(root, "a.yaml"), `profileVersion: 1\nid: a\nextends: ./b.yaml\nhost: { type: nervus-code }\nmodel: { apiKey: { $env: API_KEY } }\nagent: {}\n`, "utf8");
+      await writeFile(join(root, "b.yaml"), `profileVersion: 1\nid: b\nextends: ./a.yaml\nhost: { type: nervus-code }\nmodel: { apiKey: { $env: API_KEY } }\nagent: {}\n`, "utf8");
+      await expect(resolveProfile({ file: join(root, "a.yaml"), roots: [root], env: { API_KEY: "x" }, runtime: { workspace: "/tmp" }, contract }))
+        .rejects.toMatchObject({ code: "INHERITANCE_CYCLE" });
+
+      await writeFile(join(outside, "outside.yaml"), `profileVersion: 1\nid: outside\nhost: { type: nervus-code }\nmodel: { apiKey: { $env: API_KEY } }\nagent: {}\n`, "utf8");
+      await expect(resolveProfile({ file: join(outside, "outside.yaml"), roots: [root], env: { API_KEY: "x" }, runtime: { workspace: "/tmp" }, contract }))
+        .rejects.toMatchObject({ code: "PATH_ESCAPE" });
+
+      await writeFile(join(root, "literal.yaml"), `profileVersion: 1\nid: literal\nhost: { type: nervus-code }\nmodel: { apiKey: literal }\nagent: {}\n`, "utf8");
+      await expect(resolveProfile({ file: join(root, "literal.yaml"), roots: [root], env: {}, runtime: { workspace: "/tmp" }, contract }))
+        .rejects.toMatchObject({ code: "SECRET_LITERAL" });
+
+      await writeFile(join(root, "missing-env.yaml"), `profileVersion: 1\nid: missing\nhost: { type: nervus-code }\nmodel: { apiKey: { $env: MISSING } }\nagent: {}\n`, "utf8");
+      await expect(resolveProfile({ file: join(root, "missing-env.yaml"), roots: [root], env: {}, runtime: { workspace: "/tmp" }, contract }))
+        .rejects.toMatchObject({ code: "ENV_REFERENCE" });
+    } finally {
+      await Promise.all([
+        rm(root, { recursive: true, force: true }),
+        rm(outside, { recursive: true, force: true }),
+      ]);
+    }
+  });
 });

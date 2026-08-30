@@ -1,6 +1,6 @@
 # M13 Capability Library
 
-Status: accepted on 2026-08-30; implementation not started.
+Status: implemented and verified on 2026-08-31.
 
 ## Outcome
 

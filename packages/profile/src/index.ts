@@ -48,6 +48,14 @@ export interface ProfileResolution {
   readonly cliDigest?: string;
   readonly secretSources: readonly { readonly path: string; readonly env: string }[];
   readonly normalized: unknown;
+  readonly capabilityResolution?: unknown;
+}
+
+export function composeProfileResolution(
+  profile: ProfileResolution,
+  capabilityResolution: unknown,
+): ProfileResolution {
+  return { ...profile, capabilityResolution };
 }
 
 export async function resolveProfile(options: ResolveProfileOptions): Promise<{
