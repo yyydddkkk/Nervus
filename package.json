@@ -17,7 +17,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke:openai": "tsx examples/openai-compatible.ts"
   },
   "engines": {
     "node": ">=22"

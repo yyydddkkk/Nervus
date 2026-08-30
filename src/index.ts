@@ -1,4 +1,9 @@
 export { createKernel, Kernel, type KernelOptions, type KernelState } from "./kernel/kernel.js";
+export {
+  OpenAICompatibleChatAdapter,
+  OpenAICompatibleError,
+  type OpenAICompatibleChatAdapterOptions,
+} from "./adapters/openai-compatible.js";
 export type {
   AssembledContextBlock,
   ContextAssemblyReport,
@@ -71,6 +76,10 @@ export type {
   ToolExecutionResult,
   ToolResult,
 } from "./tools/tool.js";
+export {
+  localToolsPlugin,
+  type LocalToolsOptions,
+} from "./tools/local.js";
 export type {
   SkillDefinition,
   SkillRef,

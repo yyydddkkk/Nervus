@@ -45,6 +45,8 @@ Status: complete.
 
 ## M5: Real adapters
 
+Status: complete.
+
 - Add an OpenAI-compatible streaming Model adapter.
 - Add `fs/read`, `fs/write`, and `shell/run` Tools.
 - Exercise real adapters through opt-in smoke tests; deterministic tests remain the correctness gate.

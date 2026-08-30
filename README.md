@@ -14,3 +14,15 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
+
+## OpenAI-compatible smoke test
+
+Nervus includes a raw-fetch streaming Adapter for the Chat Completions protocol documented in the [official OpenAI API reference](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions). It can also target compatible providers through `OPENAI_BASE_URL`.
+
+```sh
+cp .env.example .env
+# Fill OPENAI_API_KEY and OPENAI_MODEL, then load the environment.
+pnpm smoke:openai -- "Say hello from Nervus."
+```
+
+This command is opt-in and is not part of the deterministic test suite.
