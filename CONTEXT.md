@@ -9,8 +9,20 @@ The runtime that resolves Agents, accepts Inputs, and coordinates their recorded
 _Avoid_: Harness, platform, application
 
 **Host**:
-An application that embeds a Kernel, registers its Adapters and Plugins, accepts external input, and presents execution results. A Host is not part of the Agent's reasoning loop.
+An application that embeds a Kernel, registers its Adapters and Plugins, accepts external input, and presents execution results. A Host may configure and select a Model Adapter for an Agent, but it does not perform model reasoning or participate in the Agent Loop.
 _Avoid_: Kernel, Agent
+
+**Capability Library**:
+A filesystem catalog from which Hosts explicitly select reusable capability packages for registration into a Kernel. It is not a runtime registry and does not make Tools, Skills, or Plugins the same domain concept.
+_Avoid_: Runtime registry, plugin scanner, Resource library
+
+**CapabilitySelection**:
+A serializable declaration of the Capability Package and Bundle identities that a Host explicitly enables for one Library resolution.
+_Avoid_: Installed packages, runtime registry
+
+**Profile**:
+A named serializable declaration of how a Host assembles Model configuration, AgentSpec, CapabilitySelection, state, execution controls, and Host options. A Profile does not describe Agent reasoning steps or persist Session history.
+_Avoid_: AgentSpec, workflow, Session snapshot
 
 **AgentSpec**:
 A serializable declaration of an Agent's model, instructions, Tools, Skills, limits, and options.

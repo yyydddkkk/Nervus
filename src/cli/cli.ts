@@ -167,7 +167,7 @@ async function runChat(
           ].join(" "),
         },
       ],
-      tools: ["fs/read", "fs/write", "shell/run"],
+      tools: ["fs/read", "fs/list", "fs/write", "shell/run"],
       limits: {
         maxSteps: 24,
         maxToolCalls: 64,

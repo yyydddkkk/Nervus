@@ -33,6 +33,14 @@ describe("local reference Tools", () => {
           yield {
             type: "tool-call",
             call: {
+              id: "list-call",
+              toolId: "fs/list",
+              arguments: { path: "nested" },
+            },
+          };
+          yield {
+            type: "tool-call",
+            call: {
               id: "read-call",
               toolId: "fs/read",
               arguments: { path: "nested/example.txt" },
@@ -48,6 +56,7 @@ describe("local reference Tools", () => {
           };
         } else {
           expect(results.map((result) => result.role === "tool" && result.status)).toEqual([
+            "success",
             "success",
             "success",
             "success",
@@ -70,6 +79,23 @@ describe("local reference Tools", () => {
               stderr: "",
             },
           });
+          const list = results.find(
+            (result) => result.role === "tool" && result.callId === "list-call",
+          );
+          expect(list?.content).toContainEqual({
+            type: "json",
+            value: {
+              path: "nested",
+              entries: [
+                {
+                  path: "nested/example.txt",
+                  name: "example.txt",
+                  type: "file",
+                  size: 5,
+                },
+              ],
+            },
+          });
           yield { type: "text-delta", delta: "local tools complete" };
         }
         yield { type: "response-completed" };
@@ -90,7 +116,7 @@ describe("local reference Tools", () => {
       const agent = await kernel.createAgent({
         id: "local-tools-agent",
         model: { adapter: model.id, model: "scripted" },
-        tools: ["fs/read", "fs/write", "shell/run"],
+        tools: ["fs/read", "fs/list", "fs/write", "shell/run"],
       });
       const session = await kernel.createSession({
         id: "local-tools-session",

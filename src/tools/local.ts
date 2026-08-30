@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import type { Plugin } from "cordis";
 
@@ -39,6 +39,54 @@ export function localToolsPlugin(options: LocalToolsOptions): Plugin.Object<void
           return {
             status: "success",
             content: [{ type: "text", text: await readFile(target, "utf8") }],
+          };
+        },
+      });
+
+      ctx.tools.register({
+        id: "fs/list",
+        description:
+          "List one directory inside the configured root as stable structured entries.",
+        inputSchema: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+          additionalProperties: false,
+        },
+        async execute(input, context) {
+          const { path } = input as { path: string };
+          const target = resolveInsideRoot(root, path);
+          context.reportProgress([
+            { type: "text", text: `listing ${path}` },
+          ]);
+          const directoryEntries = await readdir(target, {
+            withFileTypes: true,
+          });
+          const entries = await Promise.all(
+            directoryEntries
+              .sort((left, right) => left.name.localeCompare(right.name))
+              .map(async (entry) => {
+                const entryPath = join(target, entry.name);
+                const type = entry.isFile()
+                  ? "file"
+                  : entry.isDirectory()
+                    ? "directory"
+                    : entry.isSymbolicLink()
+                      ? "symlink"
+                      : "other";
+                return {
+                  path: relative(root, entryPath),
+                  name: entry.name,
+                  type,
+                  ...(type === "file"
+                    ? { size: (await lstat(entryPath)).size }
+                    : {}),
+                };
+              }),
+          );
+          return {
+            status: "success",
+            content: [{ type: "json", value: { path, entries } }],
           };
         },
       });

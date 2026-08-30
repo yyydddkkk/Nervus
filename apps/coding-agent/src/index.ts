@@ -185,7 +185,7 @@ async function runInput(
           text: "You are a Coding Agent operating only inside the explicit workspace.",
         },
       ],
-      tools: ["fs/read", "fs/write", "shell/run"],
+      tools: ["fs/read", "fs/list", "fs/write", "shell/run"],
       skills: [{ id: CODING_SKILL_ID, mode: "eager" }],
       limits: {
         maxSteps: 32,

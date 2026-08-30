@@ -123,6 +123,82 @@ Status: complete.
 - Export an injectable `runCodingCli` seam for deterministic Host tests without creating a second general-purpose SDK.
 - Run two live DeepSeek acceptances in disposable fixtures: a single-file defect repair and a scoped multi-file change.
 
+## M12: Evidence-driven Coding Host stabilization
+
+Status: in progress.
+
+Detailed blueprint: [plans/m12-coding-host-stabilization.md](./plans/m12-coding-host-stabilization.md).
+
+- Stabilize the Reference Coding Host through repeatable real coding tasks.
+- Establish behavior and efficiency baselines before expanding the Coding Tool set.
+- Promote a new Tool or Kernel capability only when task evidence demonstrates a concrete recurring gap or correctness failure.
+- Run six repeatable live DeepSeek tasks: four controlled realistic fixtures and two larger tasks against disposable copies of Nervus.
+- Keep isolation in the acceptance harness through disposable repositories or worktrees; do not add automatic worktree behavior to the Host.
+- Promote a capability after recurring evidence in at least two tasks, or immediately for one demonstrated safety, data-loss, or correctness failure.
+- Record terminal verification, Steps, ToolCalls, Tool errors, Model retries, token usage, changed files, repeated reads, Shell purpose, and instruction compliance for every task.
+- Add `fs/list` as the only pre-approved Tool improvement because directory discovery friction recurred in both M11 live tasks. `fs/search`, `fs/patch`, and Git-specific Tools remain evidence-gated.
+- Implement `fs/list` before the six-task suite and treat the M11 live receipts as the pre-change baseline.
+- Make `fs/list` enumerate one directory at a time as stable structured entries containing relative path, name, type, and file size; do not recurse or follow symbolic links.
+- Keep `fs/list` in the existing root-scoped `localToolsPlugin` during M12; M13 may package the cohesive filesystem Tool set without changing Tool semantics.
+- Cover directory/scoped-instruction discovery, a localized large-file edit, a cross-file symbol change, failed-verification recovery through resume, a seeded regression in a disposable Nervus copy, and a multi-Turn Nervus task that exercises history growth and Compaction.
+- Run the six-task suite once for diagnosis, process evidence-qualified gaps one capability at a time, and rerun the complete suite as the final acceptance pass.
+- Require all six final Turns and independent verifiers to pass with exact change scope, repository-instruction compliance, no directory-read mistakes, and no API-key leakage; record and allow recoverable provider retries or task-internal diagnostic failures.
+- Classify every ShellCall as directory discovery, content search, verification, Git review, file mutation, or other so only recurring discovery, search, or mutation friction promotes a structured Tool candidate.
+- For each promoted capability, preserve a red test, minimal implementation, affected-task rerun, and before/after metrics before proceeding to the next candidate.
+- Commit sanitized aggregate JSON and a Markdown conclusion while leaving raw SessionJournals, fixture workspaces, and provider responses under ignored `.nervus`.
+
+## M13: Capability Library
+
+Status: planned; accepted design, implementation not started.
+
+Detailed blueprint: [plans/m13-capability-library.md](./plans/m13-capability-library.md).
+
+- Build a shared filesystem Capability Library outside the Kernel after M12 stabilization is complete.
+- Let Hosts explicitly select reusable capability packages for registration through existing Kernel interfaces.
+- Keep filesystem discovery, manifests, and loading policy out of required Kernel modules and the Agent Loop.
+- Treat one directory as one namespaced Capability Package with a manifest, executable entry when needed, and attached resources; allow a package to contribute an internally cohesive capability set.
+- Index built-in roots plus additional roots supplied explicitly by a Host; do not auto-discover project or user directories.
+- Treat executable packages as trusted local Host dependencies loaded only at startup; defer sandboxing, remote installation, Agent-controlled loading, and HMR.
+- Prove cross-Host reuse by migrating both `nervus` CLI and `nervus-code` to a shared filesystem capability package while keeping Coding-specific Skills selected only by the Coding Host.
+- Describe every Package with a JSON-Schema-validated `capability.json` containing a namespaced ID, recorded version, Package kind, declared contributions, and an entry path when executable.
+- Load executable Package entries through one default `CapabilityFactory(config) -> Cordis Plugin` export so configurable Packages still enter the existing Kernel lifecycle through standard Plugins.
+- Let a manifest reference an optional JSON Schema for Package configuration; validate the selected configuration before invoking the CapabilityFactory or producing Plugin side effects, and pass an empty object to configuration-free Packages.
+- Reject duplicate Package IDs across all configured roots instead of applying root precedence or automatic version selection.
+- Resolve declared Package-ID dependencies as one acyclic graph, failing on missing dependencies or cycles; record versions without adding multi-version or semver-range resolution in M13.
+- Model a Bundle as a declaration-only Package whose recursive members expand the Host selection and receive no executable loading privileges.
+- Expose one asynchronous `resolveCapabilityLibrary({ roots, select })` interface that returns load-ready Cordis Plugins plus a serializable CapabilityResolution.
+- Record original selection, expanded Package IDs and versions, content digests, dependencies, and load order in the Host-owned CapabilityResolution without changing SessionEvents or AgentSnapshot in M13.
+- Require executable entries to be directly importable ESM for the current Node process; the Library does not compile TypeScript.
+- Canonicalize manifest, entry, and resource paths inside each Package Root; reject path escapes and duplicate declared contributions while leaving actual runtime registration conflicts to the Kernel.
+- Fail Host startup with stable CapabilityLibraryError codes for invalid manifests, duplicate IDs, missing dependencies, cycles, invalid paths, entry loading failures, and invalid Plugin exports.
+- End Library ownership after resolution: Hosts pass returned Plugins to `createKernel()`, and Cordis/Kernel exclusively own registration, leases, draining, and disposal.
+- Keep installation separate from enablement: placing a trusted Package in a configured Root only makes it resolvable, while the Host must still select it explicitly. M13 provides no copy, download, or remote installer.
+- Define CapabilitySelection as serializable data accepted through the M13 program interface and repeatable CLI flags; defer persistent Profile files and YAML to M14.
+
+## M14: Profile and YAML assembly
+
+Status: planned; accepted design, implementation not started.
+
+Detailed blueprint: [plans/m14-profile-yaml.md](./plans/m14-profile-yaml.md).
+
+- Define a complete declarative Profile for one Host assembly, including Model configuration, AgentSpec, CapabilitySelection, Journal/state, execution controls, and Host options.
+- Keep tasks, reasoning steps, Package installation, Session history, long-term Memory, and secret values outside the Profile.
+- Treat YAML as a validated serialization of the typed Profile model rather than the source of runtime semantics.
+- Implement Profile loading as a shared Host-side library outside the Kernel and Capability Library; resolve it into ordinary Host inputs rather than adding a required Kernel Module.
+- Define exactly one primary Agent per M14 Profile and defer multi-Agent declarations, routing, and workflows until a real multi-Agent Host exists.
+- Compose Profiles through one optional `extends` chain plus zero or more Host-supplied overlays applied in explicit order; reject multiple inheritance.
+- Merge parent, child, and overlay data with deterministic JSON-Merge-Patch-like rules: recursively merge mappings, replace scalars and complete sequences, and use `null` only to clear optional fields; never concatenate arrays implicitly.
+- Apply configuration precedence as Schema defaults, parent chain, current Profile, ordered Host overlays, and explicit CLI flags, then resolve value references after the final merge.
+- Keep CapabilitySelection identities separate from a Package-ID-keyed `configure` map so Profiles can configure both directly selected Packages and members expanded from Bundles.
+- Permit only structured value references such as `{ $env: NAME }` and `{ $runtime: NAME }`; prohibit arbitrary string interpolation and command substitution, and reject literal values in fields marked `x-secret`.
+- Parse a strict versioned YAML 1.2 data subset, rejecting duplicate and unknown keys, custom tags, merge keys, anchors, and aliases before Profile Schema validation.
+- Resolve a single parent path relative to its declaring Profile inside explicit Profile Roots, rejecting missing parents, path escape, remote sources, and inheritance cycles.
+- Let each Host supply a HostProfileContract containing Host type, `host.options` Schema, and a typed runtime-binding whitelist.
+- Mark secret fields through Host or Capability config Schema metadata, require `$env` references instead of literals, and keep resolved values only in memory while resolutions and errors remain redacted.
+- Emit a serializable ProfileResolution containing Profile/source/overlay digests, inheritance and override provenance, redacted normalized configuration, CapabilityResolution, and a non-sensitive assembly summary.
+- Parse and freeze one Profile per Host startup; require restart for changes and defer watchers, HMR, online switching, and per-Turn reload.
+- Fail before Plugin effects with stable ProfileError codes for parsing, Schema, path, inheritance, Host contract, reference, secret, overlay, Capability configuration, and Resolution failures.
+
 ## Deferred
 
 - Memory plugins.
