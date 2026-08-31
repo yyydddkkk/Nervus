@@ -2,7 +2,7 @@
 
 Audit date: 2026-08-31.
 
-Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0–M14 [implementation milestones](./IMPLEMENTATION.md), with intentionally deferred items listed below.
+Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0–M15 [implementation milestones](./IMPLEMENTATION.md), with intentionally deferred items listed below.
 
 ## Milestone evidence
 
@@ -23,6 +23,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0
 | M12 Coding Host stabilization | Complete | `fs/list`, `apps/coding-agent/src/metrics.ts`, `examples/deepseek-coding-stabilization.ts`, `docs/evidence/m12-stabilization.json`, and `docs/evidence/m12-coding-host-stabilization.md` prove a two-pass six-task matrix, evidence-gated Prompt adjustment, zero final directory errors, full-repository repair, resume, and real Compaction. |
 | M13 Capability Library | Complete | `packages/capability-library`, `capabilities/filesystem`, `tests/capability-library.test.ts`, and `docs/evidence/capability-library.md` prove strict manifests, explicit resolution, Bundle/dependency ordering, configuration, path/error contracts, stable Resolution, and reuse by both Hosts. |
 | M14 Profile/YAML | Complete | `packages/profile`, both Host `--profile` paths, `tests/profile-loader.test.ts`, Host integration tests, and `docs/evidence/profile-yaml.md` prove strict YAML, inheritance/overlay semantics, runtime/env references, secret redaction, Resolution composition, and startup-only assembly. |
+| M15 Profile-driven Host Assembly | Complete | `packages/host`, Profile v2, two-phase Capability planning, `capabilities/openai-compatible`, `tests/host-assembly.test.ts`, expanded Host tests, and `docs/evidence/m15-profile-driven-host-assembly.md` prove complete shared assembly, attributable contributions/resume, immutable redacted evidence, real generic/Coding DeepSeek Profiles, and zero key leakage. |
 
 ## Architecture requirements
 
@@ -47,8 +48,9 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0
 | MCP | The official MCP v2 Client is isolated behind a Cordis Plugin. stdio, Streamable HTTP, and connected-Client entry points map server capabilities into existing Tool, Skill, and Context seams. |
 | Compaction | Context reports `needsCompaction`; the Agent Loop durably runs a model-backed summary call, records `history/compacted`, and retries assembly from the summary plus later messages without deleting source events. |
 | Coding Host | The private `@nervus/coding-agent` workspace package exposes `nervus-code` and `runCodingCli`, imports Nervus only from its package root, stores Journals outside target repositories, and validates the existing Kernel through real coding workflows. |
-| Capability Library | A Host-side resolver converts explicit trusted Package selections into standard Cordis Plugins and a serializable CapabilityResolution; Kernel registries and lifecycle remain authoritative after resolution. |
-| Profile | A Host-side strict YAML loader produces one frozen assembly and redacted ProfileResolution before Plugin effects; the Kernel does not parse or reload configuration files. |
+| Capability Library | A side-effect-free CapabilityPlan validates explicit trusted Package selections, declared artifacts, configuration, dependencies, and contribution conflicts; verified instantiation then produces standard Cordis Plugins. Kernel registries and lifecycle remain authoritative after mounting. |
+| Profile | A Host-side strict v2 YAML/data loader produces complete typed assembly inputs, expanded defaults, and redacted ProfileResolution; the Kernel does not parse or reload configuration files. |
+| Host Assembly | `@nervus/host` composes Profile, CapabilityPlan, HostContributions, Journal, Kernel controls, and one complete AgentSpec; owns rollback/disposal; and persists immutable secret-redacted HostAssemblyResolution references without adding a Kernel module. |
 
 ## Kernel invariant evidence
 
@@ -65,9 +67,11 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0
 
 ## Explicitly deferred
 
-These are not missing from M0–M11; the accepted blueprint explicitly defers them:
+These are not missing from M0–M15; the accepted blueprint explicitly defers them:
 
 - Concrete Memory plugins.
+- Capability installation, scaffolding, remote registries, and automatic scanning.
+- Multi-Agent routing, workflows, and a durable Job abstraction.
 - HMR, UI, and distributed execution.
 - Permissions, approvals, sandboxing, and cross-model fallback.
 - Public npm publication and API compatibility guarantees.

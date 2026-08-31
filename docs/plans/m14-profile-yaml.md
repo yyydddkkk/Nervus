@@ -4,11 +4,11 @@ Status: implemented and verified on 2026-08-31.
 
 ## Outcome
 
-M14 defines a typed Profile model and a strict YAML serialization for one complete Host assembly. A Profile selects and configures one primary Agent, Capability Packages, Model behavior, state, execution controls, and Host options. Profile loading remains outside the Kernel and finishes before Plugin side effects.
+M14 delivered the first typed Profile Loader and strict YAML v1 serialization, including inheritance, ordered merge patches, structured references, secret redaction, and partial adoption by both Hosts. It proved the Host-side configuration boundary but did not complete runtime assembly: Agent identity/instructions/limits/timeouts, Kernel controls, Journal selection, Host options, and provider connection settings remained partly or wholly hard-coded. Complete Profile-driven runtime assembly is M15 scope.
 
 ## Profile boundary
 
-A Profile is a named assembly declaration, not an AgentSpec alias. It contains one AgentSpec as a subset alongside Host, CapabilitySelection, Package configuration, Model, Journal/state, and runtime controls.
+A v1 Profile is a named assembly declaration, not an AgentSpec alias. Its broad `agent`, `state`, and Host sections reserved the intended assembly shape while M14 Hosts consumed only model name, CapabilitySelection, Tools, and Skills. M15 replaces this incomplete shape with strict Profile v2 rather than silently changing v1.
 
 A Profile never contains task Inputs, reasoning steps, Package installation, Session history, long-term Memory, or literal secret values. Multi-Agent topology and workflows remain deferred until a real Host requires them.
 
@@ -20,14 +20,7 @@ Every document requires `profileVersion: 1` and a stable Profile ID. M14 accepts
 
 A Profile may have one `extends` parent. Parent paths resolve relative to the declaring file, must remain inside Host-supplied Profile Roots after realpath canonicalization, and may not form a cycle. Multiple inheritance and remote sources are invalid.
 
-Composition order is:
-
-1. Schema defaults;
-2. the resolved parent chain;
-3. the current Profile;
-4. Host-supplied overlays from left to right;
-5. explicit CLI flags;
-6. structured value-reference resolution.
+Composition order implemented by M14 is the resolved parent chain, current Profile, Host-supplied overlays from left to right, explicit CLI patch, Schema validation, and structured value-reference resolution. Effective Schema-default expansion is added by M15.
 
 Parent, child, and overlays use deterministic JSON-Merge-Patch-like rules: mappings merge recursively, scalars replace, complete sequences replace, and `null` clears only optional fields. Arrays never concatenate implicitly.
 
@@ -46,15 +39,15 @@ apiKey:
 
 The HostProfileContract defines allowed runtime names and types. Unknown or type-incompatible references fail. Environment values do not act as implicit overrides and arbitrary string interpolation or command substitution is forbidden.
 
-Host and Capability config Schemas mark sensitive fields with `x-secret: true`. Secret fields accept only `$env` references, never literals. Resolved values exist only in the in-memory assembly; logs, errors, ProfileResolution, receipts, and Journals retain only the environment variable name plus a redacted marker.
+The v1 Host contract can mark sensitive fields with `x-secret: true`; those fields accept only `$env` references and ProfileResolution remains redacted. Because v1 Host Schemas treated nested Capability configuration permissively, enforcing Package-owned `x-secret` metadata before reference resolution is completed in M15.
 
 ## Resolution and lifecycle
 
-ProfileResolution records Profile identity/version, source and content digests, the extends chain, ordered overlay digests, explicit CLI override fields, normalized effective configuration with unresolved/redacted secret references, CapabilityResolution, and a non-sensitive final assembly summary.
+ProfileResolution records Profile identity, source and content digests, extends chain, overlay/CLI digests, secret reference sources, redacted normalized configuration, and an optional composed CapabilityResolution. M15 introduces the complete HostAssemblyResolution and effective-default summary.
 
 The Loader parses, composes, resolves references, and validates the complete Profile before CapabilityFactory invocation or any Plugin effect. A Profile is read once and frozen for the Host lifetime. File changes require an explicit restart; M14 has no watcher, HMR, online Agent mutation, or per-Turn reload.
 
-`ProfileError` exposes stable codes for YAML syntax, unsupported YAML constructs, Schema failure, unknown fields, path escape, missing parent, inheritance cycle, Host type mismatch, runtime reference failure, secret literal, overlay failure, Capability configuration failure, and Resolution failure. All failures prevent partial Host startup.
+`ProfileError` exposes stable codes for YAML syntax, unsupported constructs, Schema failure, path escape, missing parent, inheritance cycle, Host type mismatch, runtime reference failure, environment reference failure, and secret literals. All Loader failures precede Plugin mounting.
 
 ## Acceptance
 

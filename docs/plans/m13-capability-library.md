@@ -47,6 +47,8 @@ resolveCapabilityLibrary({ roots, select, configure })
   -> Promise<{ plugins, resolution }>
 ```
 
+M15 preserves this convenience interface while splitting its implementation into side-effect-free `planCapabilityLibrary()` and verified `instantiateCapabilityPlan()`, and extends Package content identity to the entry, config Schema, and declared artifacts. This section records the original M13 contract.
+
 Resolution:
 
 1. canonicalizes explicit Roots and indexes manifests without importing entries;

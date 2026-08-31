@@ -1,11 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import {
   CapabilityLibraryError,
+  instantiateCapabilityPlan,
+  planCapabilityLibrary,
   resolveCapabilityLibrary,
 } from "../packages/capability-library/src/index.js";
 
@@ -158,6 +160,95 @@ describe("Capability Library", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("plans without importing code and rejects content changed before instantiation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nervus-cap-plan-"));
+    try {
+      await capability(root, "planned", {
+        schemaVersion: 1,
+        id: "demo/planned",
+        version: "1.0.0",
+        kind: "plugin",
+        entry: "./index.js",
+        artifacts: ["./instructions.md"],
+        provides: [],
+        dependencies: [],
+      }, `throw new Error("entry imported");`);
+      await writeFile(join(root, "planned", "instructions.md"), "first", "utf8");
+      const plan = await planCapabilityLibrary({ roots: [root], select: ["demo/planned"] });
+      expect(plan.resolution.packages[0]?.artifacts).toEqual(["./instructions.md"]);
+      await writeFile(join(root, "planned", "instructions.md"), "second", "utf8");
+      await expect(instantiateCapabilityPlan(plan)).rejects.toMatchObject({ code: "CONTENT_CHANGED" });
+      const changed = await planCapabilityLibrary({ roots: [root], select: ["demo/planned"] });
+      expect(changed.resolution.packages[0]?.digest).not.toBe(plan.resolution.packages[0]?.digest);
+      await expect(instantiateCapabilityPlan(changed)).rejects.toMatchObject({ code: "ENTRY_LOAD_FAILED" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces Package secret references and detects Host contribution conflicts while planning", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nervus-cap-secret-"));
+    try {
+      await capability(root, "secret", {
+        schemaVersion: 1,
+        id: "demo/secret",
+        version: "1.0.0",
+        kind: "plugin",
+        entry: "./index.js",
+        configSchema: "./config.schema.json",
+        provides: [{ kind: "model", id: "demo/model" }],
+        dependencies: [],
+      }, `export default () => ({ name: "secret", apply() {} });`, {
+        type: "object",
+        properties: { apiKey: { type: "string", "x-secret": true } },
+        required: ["apiKey"],
+        additionalProperties: false,
+      });
+      await expect(planCapabilityLibrary({
+        roots: [root],
+        select: ["demo/secret"],
+        configure: { "demo/secret": { apiKey: "literal" } },
+      })).rejects.toMatchObject({ code: "SECRET_LITERAL" });
+      const plan = await planCapabilityLibrary({
+        roots: [root],
+        select: ["demo/secret"],
+        configure: { "demo/secret": { apiKey: "resolved-secret" } },
+        referenceConfigure: { "demo/secret": { apiKey: { $env: "API_KEY" } } },
+      });
+      expect(JSON.stringify(plan)).not.toContain("resolved-secret");
+      await expect(planCapabilityLibrary({
+        roots: [root],
+        select: ["demo/secret"],
+        configure: { "demo/secret": { apiKey: "resolved-secret" } },
+        referenceConfigure: { "demo/secret": { apiKey: { $env: "API_KEY" } } },
+        hostProvides: [{ kind: "model", id: "demo/model" }],
+      })).rejects.toMatchObject({ code: "HOST_CONTRIBUTION_CONFLICT" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects OpenAI-compatible extraBody fields owned by the Adapter", async () => {
+    await expect(planCapabilityLibrary({
+      roots: [resolve("capabilities")],
+      select: ["nervus/openai-compatible"],
+      configure: {
+        "nervus/openai-compatible": {
+          baseUrl: "https://example.invalid",
+          apiKey: "resolved-secret",
+          extraBody: { model: "must-not-override" },
+        },
+      },
+      referenceConfigure: {
+        "nervus/openai-compatible": {
+          baseUrl: "https://example.invalid",
+          apiKey: { $env: "API_KEY" },
+          extraBody: { model: "must-not-override" },
+        },
+      },
+    })).rejects.toMatchObject({ code: "INVALID_CONFIG" });
   });
 });
 

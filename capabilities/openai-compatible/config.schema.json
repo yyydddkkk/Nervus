@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "baseUrl": { "type": "string", "minLength": 1 },
+    "apiKey": { "type": "string", "minLength": 1, "x-secret": true },
+    "compatibility": { "enum": ["openai", "deepseek"], "default": "openai" },
+    "instructionRole": { "enum": ["developer", "system"] },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "safetyMarginTokens": { "type": "integer", "minimum": 0 },
+        "supportsTools": { "type": "boolean" },
+        "supportsImages": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "extraBody": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": ["model", "messages", "tools", "stream", "stream_options"]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "required": ["baseUrl", "apiKey"],
+  "additionalProperties": false
+}

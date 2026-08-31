@@ -21,7 +21,7 @@ The first release targets Node.js 22+, ESM, TypeScript, one process, and one mac
 ### Engineering and host conventions
 
 - The repository is a pnpm workspace with the Kernel at the root and private reference Hosts under `apps/`. A Host package exists to prove package-root integration and may not import Kernel internals; this is packaging isolation, not an independent release promise. See ADR-0005.
-- Hosts mount Cordis Plugins explicitly during `createKernel()` bootstrap. The Host-side Capability Library and Profile Loader may resolve trusted local Packages and strict YAML into those Plugins and ordinary AgentSpec data; the Kernel itself does not scan directories, parse YAML, or let AgentSpec load packages. HMR remains deferred.
+- Hosts obtain a frozen Host Assembly before accepting input. The Host-side Capability Library plans trusted local Packages without executable imports and then instantiates them as Cordis Plugins; the Profile Loader resolves strict v2 YAML or equivalent in-memory data into complete AgentSpec and Host inputs. The Kernel itself does not scan directories, parse YAML, load Packages, or understand HostAssemblyResolution. HMR remains deferred.
 - Library Adapters never choose hidden filesystem locations. In particular, a JSONL SessionJournal requires an explicit directory; a reference CLI may define its own documented default.
 - The initial users are the project maintainers, so rapid experiments and breaking changes are allowed while the package remains private. Correct semantics and readable interfaces still take precedence over short-lived convenience.
 
@@ -486,7 +486,9 @@ The first usable release includes:
 - MCP v2 Adapter and interactive CLI host.
 - Automatic durable history Compaction.
 - Private Reference Coding Host with deterministic and live DeepSeek acceptance.
-- Host-side Capability Library and strict Profile/YAML assembly.
+- Side-effect-free Capability planning followed by verified Package instantiation.
+- Strict Profile v2 and shared `@nervus/host` Profile-driven Host Assembly.
+- Immutable redacted HostAssemblyResolution plus attributable Profile changes between Turns.
 
 Explicitly deferred:
 

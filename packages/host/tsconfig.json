@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.build.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "paths": {
+      "@nervus/capability-library": ["./packages/capability-library/dist/index.d.ts"],
+      "@nervus/profile": ["./packages/profile/dist/index.d.ts"],
+      "nervus/core": ["./dist/core.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

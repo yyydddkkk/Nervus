@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "nervus/openai-compatible",
+  "version": "1.0.0",
+  "kind": "plugin",
+  "entry": "./index.js",
+  "configSchema": "./config.schema.json",
+  "artifacts": [],
+  "provides": [
+    { "kind": "model", "id": "openai-compatible/chat" }
+  ],
+  "dependencies": []
+}

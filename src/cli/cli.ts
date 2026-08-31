@@ -1,18 +1,26 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveCapabilityLibrary } from "@nervus/capability-library";
-import { composeProfileResolution, resolveProfile } from "@nervus/profile";
+import {
+  assembleHost,
+  explainHost,
+  recordSessionAssembly,
+  validateHostProfile,
+  type HostAssembly,
+  type HostAssemblyOptions,
+  type HostContract,
+  type HostContribution,
+} from "@nervus/host";
+import type { ProfileOverlay, ProfileSource } from "@nervus/profile";
 import type { Plugin } from "cordis";
 
-import { OpenAICompatibleChatAdapter } from "../adapters/openai-compatible.js";
 import type { ModelAdapter } from "../models/model.js";
-import { createKernel } from "../kernel/kernel.js";
 import { JsonlSessionJournal } from "../sessions/jsonl-journal.js";
 import { projectSession } from "../sessions/projection.js";
-import type { Session } from "../sessions/session.js";
+import type { Session, TurnResult } from "../sessions/session.js";
 
 export interface CliIO {
   write(text: string): void;
@@ -29,14 +37,17 @@ export interface RunNervusCliOptions {
 }
 
 interface ParsedOptions {
-  readonly workspace: string;
-  readonly sessionsDirectory: string;
+  readonly workspace?: string;
+  readonly stateDirectory?: string;
   readonly sessionId?: string;
   readonly createNew: boolean;
   readonly prompt: string;
   readonly capabilityRoots: readonly string[];
   readonly capabilities: readonly string[];
   readonly profile?: string;
+  readonly overlays: readonly string[];
+  readonly model?: string;
+  readonly json: boolean;
 }
 
 export async function runNervusCli(
@@ -47,50 +58,26 @@ export async function runNervusCli(
     const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
     const [command, subcommand] = normalizedArgv;
     if (command === "chat") {
-      return runChat(parseOptions(normalizedArgv.slice(1)), options);
+      return await runChat(parseOptions(normalizedArgv.slice(1)), options, "chat");
     }
     if (command === "sessions" && subcommand === "resume") {
       const sessionId = normalizedArgv[2];
       if (!sessionId) throw new Error("sessions resume requires a Session ID");
-      return runChat(
-        parseOptions(normalizedArgv.slice(3), { sessionId }),
-        options,
-      );
+      return await runChat(parseOptions(normalizedArgv.slice(3), { sessionId }), options, "resume");
     }
     if (command === "sessions" && subcommand === "list") {
-      const parsed = parseOptions(normalizedArgv.slice(2));
-      const journal = new JsonlSessionJournal({
-        directory: parsed.sessionsDirectory,
-      });
-      for (const sessionId of await journal.list()) {
-        options.io.write(`${sessionId}\n`);
-      }
-      return 0;
+      return await runSessionQuery("list", undefined, parseOptions(normalizedArgv.slice(2)), options);
     }
     if (command === "sessions" && subcommand === "inspect") {
       const sessionId = normalizedArgv[2];
       if (!sessionId) throw new Error("sessions inspect requires a Session ID");
-      const parsed = parseOptions(normalizedArgv.slice(3), { sessionId });
-      const journal = new JsonlSessionJournal({
-        directory: parsed.sessionsDirectory,
-      });
-      const events = await journal.read(sessionId);
-      if (events.length === 0) throw new Error(`Session does not exist: ${sessionId}`);
-      const snapshot = projectSession(sessionId, events);
-      options.io.write(
-        `${JSON.stringify(
-          {
-            snapshot,
-            eventCounts: countValues(events.map((event) => event.type)),
-            usage: collectUsage(events),
-          },
-          null,
-          2,
-        )}\n`,
-      );
-      return 0;
+      return await runSessionQuery("inspect", sessionId, parseOptions(normalizedArgv.slice(3), { sessionId }), options);
     }
-
+    if (command === "profiles" && (subcommand === "validate" || subcommand === "explain")) {
+      const file = normalizedArgv[2];
+      if (!file) throw new Error(`profiles ${subcommand} requires a Profile file`);
+      return await runProfileCommand(subcommand, resolve(file), parseOptions(normalizedArgv.slice(3)), options);
+    }
     writeUsage(options.io);
     return command ? 1 : 0;
   } catch (error) {
@@ -99,57 +86,56 @@ export async function runNervusCli(
   }
 }
 
-async function runChat(
+async function runProfileCommand(
+  command: "validate" | "explain",
+  profile: string,
   parsed: ParsedOptions,
   options: RunNervusCliOptions,
 ): Promise<number> {
-  await mkdir(parsed.workspace, { recursive: true });
-  const env = options.env ?? process.env;
-  const profile = parsed.profile
-    ? await resolveProfile({ file: parsed.profile, roots: [dirname(parsed.profile)], env, runtime: { workspace: parsed.workspace }, contract: GENERIC_PROFILE_CONTRACT })
-    : undefined;
-  const profileAssembly = profile?.assembly;
-  const profileModel = asRecord(profileAssembly?.model);
-  const profileCapabilities = asRecord(profileAssembly?.capabilities);
-  const profileAgent = asRecord(profileAssembly?.agent);
-  const model = options.modelAdapter ?? createEnvironmentModel(env);
-  const modelName = typeof profileModel?.name === "string"
-    ? profileModel.name
-    : options.modelAdapter
-      ? env.OPENAI_MODEL ?? "scripted"
-    : requiredValue(env, "OPENAI_MODEL");
-  const journal = new JsonlSessionJournal({
-    directory: parsed.sessionsDirectory,
-  });
-  const modelPlugin: Plugin.Object<void> = {
-    name: "nervus/cli-model",
-    inject: ["models"],
-    apply(ctx) {
-      ctx.models.register(model);
-    },
-  };
-  const capabilities = await resolveCapabilityLibrary({
-    roots: [
-      fileURLToPath(new URL("../../capabilities", import.meta.url)),
-      ...parsed.capabilityRoots,
-      ...stringArray(profileCapabilities?.roots),
-    ],
-    select: ["nervus/filesystem", ...parsed.capabilities, ...stringArray(profileCapabilities?.select)],
-    configure: { "nervus/filesystem": { root: parsed.workspace }, ...asRecord(profileCapabilities?.configure) },
-  });
-  await mkdir(parsed.sessionsDirectory, { recursive: true });
-  await writeFile(
-    resolve(parsed.sessionsDirectory, "capability-resolution.json"),
-    `${JSON.stringify(capabilities.resolution, null, 2)}\n`,
-    "utf8",
-  );
-  if (profile) {
-    await writeFile(resolve(parsed.sessionsDirectory, "profile-resolution.json"), `${JSON.stringify(composeProfileResolution(profile.resolution, capabilities.resolution), null, 2)}\n`, "utf8");
+  const invocation = assemblyOptions({ ...parsed, profile }, options);
+  const result = command === "validate"
+    ? await validateHostProfile(invocation)
+    : await explainHost(invocation);
+  options.io.write(`${JSON.stringify(result, null, parsed.json ? 0 : 2)}\n`);
+  return 0;
+}
+
+async function runSessionQuery(
+  command: "list" | "inspect",
+  sessionId: string | undefined,
+  parsed: ParsedOptions,
+  options: RunNervusCliOptions,
+): Promise<number> {
+  let assembly: HostAssembly | undefined;
+  const journal = parsed.profile
+    ? (assembly = await assembleHost(assemblyOptions(parsed, options))).journal
+    : new JsonlSessionJournal({ directory: legacyStateDirectory(parsed) });
+  try {
+    if (command === "list") {
+      for (const id of await journal.list()) options.io.write(`${id}\n`);
+      return 0;
+    }
+    const events = await journal.read(sessionId!);
+    if (events.length === 0) throw new Error(`Session does not exist: ${sessionId}`);
+    options.io.write(`${JSON.stringify({
+      snapshot: projectSession(sessionId!, events),
+      eventCounts: countValues(events.map((event) => event.type)),
+      usage: collectUsage(events),
+    }, null, 2)}\n`);
+    return 0;
+  } finally {
+    await assembly?.dispose();
   }
-  const kernel = await createKernel({
-    journal,
-    plugins: [modelPlugin, ...capabilities.plugins],
-  });
+}
+
+async function runChat(
+  parsed: ParsedOptions,
+  options: RunNervusCliOptions,
+  action: "chat" | "resume",
+): Promise<number> {
+  if (parsed.workspace) await mkdir(parsed.workspace, { recursive: true });
+  const assembly = await assembleHost(assemblyOptions(parsed, options));
+  const { kernel, journal } = assembly;
   let session: Session | undefined;
   let active = false;
   let exitRequested = false;
@@ -163,19 +149,14 @@ async function runChat(
       }
       return;
     }
-    options.io.write(update.delta);
+    if (parsed.json) options.io.writeError(update.delta);
+    else options.io.write(update.delta);
   });
-  const removeReasoningListener = kernel.context.on(
-    "model/reasoning-delta",
-    (update) => {
-      if (update.purpose === "compaction") return;
-      reasoningCharacters += update.delta.length;
-    },
-  );
+  const removeReasoningListener = kernel.context.on("model/reasoning-delta", (update) => {
+    if (update.purpose !== "compaction") reasoningCharacters += update.delta.length;
+  });
   const removeProgressListener = kernel.context.on("tool/progress", (update) => {
-    options.io.writeError(
-      `[progress ${update.toolId}] ${contentText(update.content)}\n`,
-    );
+    options.io.writeError(`[progress ${update.toolId}] ${contentText(update.content)}\n`);
   });
   const removeInterrupt = options.io.onInterrupt(() => {
     if (active && session?.cancelActiveTurn("CLI interrupt")) {
@@ -187,42 +168,34 @@ async function runChat(
   });
 
   try {
-    const agent = await kernel.createAgent({
-      id: "nervus-cli-agent",
-      model: { adapter: model.id, model: modelName, maxOutputTokens: 8_192 },
-      instructions: [
-        {
-          type: "text",
-          text: [
-            "You are a Tool-using Agent operating in an explicit workspace.",
-            "Use relative paths, inspect evidence before making claims, and report Tool failures honestly.",
-          ].join(" "),
-        },
-      ],
-      tools: stringArray(profileAgent?.tools).length ? stringArray(profileAgent?.tools) : ["fs/read", "fs/list", "fs/write", "shell/run"],
-      ...(Array.isArray(profileAgent?.skills) ? { skills: profileAgent.skills as { id: string; mode: "eager" | "available" }[] } : {}),
-      limits: {
-        maxSteps: 24,
-        maxToolCalls: 64,
-        maxToolCallsPerStep: 8,
-        maxModelAttempts: 32,
-      },
-      timeouts: { modelMs: 300_000, toolMs: 60_000 },
-    });
     const sessionId = parsed.sessionId ?? `session-${randomUUID()}`;
     const exists = (await journal.list()).includes(sessionId);
-    if (parsed.createNew && exists) {
-      throw new Error(`Session already exists: ${sessionId}`);
+    if (parsed.createNew && exists) throw new Error(`Session already exists: ${sessionId}`);
+    if (action === "resume" && !exists) throw new Error(`Session does not exist: ${sessionId}`);
+    const attribution = await recordSessionAssembly({
+      ...(assembly.stateDirectory ? { stateDirectory: assembly.stateDirectory } : {}),
+      sessionId,
+      action: exists ? "open" : "create",
+      resolution: assembly.resolution,
+      profileExplicit: !!parsed.profile,
+    });
+    if (attribution.changed) {
+      options.io.writeError(`[assembly changed ${attribution.previousDigest} -> ${assembly.resolution.digest}]\n`);
     }
     session = exists
       ? await kernel.openSession({ id: sessionId })
-      : await kernel.createSession({ id: sessionId, agentId: agent.id });
+      : await kernel.createSession({ id: sessionId, agentId: assembly.agent.id });
     options.io.writeError(`[session ${sessionId}]\n`);
 
     if (parsed.prompt) {
-      return (await executeInput(session, parsed.prompt)) ? 0 : 1;
+      const result = await executeInput(session, parsed.prompt);
+      if (parsed.json) {
+        options.io.write(`${JSON.stringify({ sessionId, turn: result, assemblyDigest: assembly.resolution.digest })}\n`);
+      }
+      return result.status === "completed" ? 0 : 1;
     }
 
+    if (parsed.json) throw new Error("--json requires a one-shot prompt");
     options.io.write("nervus> ");
     for await (const line of options.io.readLines()) {
       if (exitRequested) break;
@@ -241,151 +214,208 @@ async function runChat(
     removeProgressListener();
     removeReasoningListener();
     removeTextListener();
-    await kernel.dispose();
+    await assembly.dispose();
   }
 
-  async function executeInput(target: Session, input: string): Promise<boolean> {
+  async function executeInput(target: Session, input: string): Promise<TurnResult> {
     active = true;
     reasoningCharacters = 0;
     const before = (await target.events()).length;
     try {
-      const result = await target.send({
-        content: [{ type: "text", text: input }],
-      });
-      options.io.write("\n");
+      const result = await target.send({ content: [{ type: "text", text: input }] });
+      if (!parsed.json) options.io.write("\n");
       const events = (await target.events()).slice(before);
-      const toolCalls = events.filter(
-        (event) => event.type === "tool/call-started",
-      ).length;
-      const toolErrors = events.filter(
-        (event) =>
-          event.payload.type === "tool/call-completed" &&
-          event.payload.result.status === "error",
-      ).length;
-      const failure = [...events].reverse().find(
-        (event) =>
-          event.payload.type === "turn/failed" ||
-          event.payload.type === "turn/cancelled" ||
-          event.payload.type === "turn/exhausted",
-      );
-      if (failure?.payload.type === "turn/failed") {
-        options.io.writeError(`[error] ${failure.payload.error}\n`);
-      } else if (failure?.payload.type === "turn/cancelled") {
-        options.io.writeError(`[cancelled] ${failure.payload.reason}\n`);
-      } else if (failure?.payload.type === "turn/exhausted") {
-        options.io.writeError("[exhausted] TurnLimits reached\n");
-      }
-      options.io.writeError(
-        `[turn ${result.status}; tools=${toolCalls}; errors=${toolErrors}; reasoningChars=${reasoningCharacters}]\n`,
-      );
-      return result.status === "completed";
+      const toolCalls = events.filter((event) => event.type === "tool/call-started").length;
+      const toolErrors = events.filter((event) => event.payload.type === "tool/call-completed" && event.payload.result.status === "error").length;
+      const failure = [...events].reverse().find((event) =>
+        event.payload.type === "turn/failed" ||
+        event.payload.type === "turn/cancelled" ||
+        event.payload.type === "turn/exhausted");
+      if (failure?.payload.type === "turn/failed") options.io.writeError(`[error] ${failure.payload.error}\n`);
+      else if (failure?.payload.type === "turn/cancelled") options.io.writeError(`[cancelled] ${failure.payload.reason}\n`);
+      else if (failure?.payload.type === "turn/exhausted") options.io.writeError("[exhausted] TurnLimits reached\n");
+      options.io.writeError(`[turn ${result.status}; tools=${toolCalls}; errors=${toolErrors}; reasoningChars=${reasoningCharacters}]\n`);
+      return result;
     } finally {
       active = false;
     }
   }
 }
 
-function parseOptions(
-  argv: readonly string[],
-  defaults: { readonly sessionId?: string } = {},
-): ParsedOptions {
+function assemblyOptions(parsed: ParsedOptions, options: RunNervusCliOptions): HostAssemblyOptions {
+  const env = options.env ?? process.env;
+  const contribution = options.modelAdapter ? modelContribution(options.modelAdapter) : undefined;
+  const source = parsed.profile
+    ? ({ kind: "file", file: parsed.profile, roots: [dirname(parsed.profile)] } satisfies ProfileSource)
+    : generatedProfile(parsed, env, options.modelAdapter);
+  const runtime: Record<string, unknown> = {};
+  if (parsed.workspace) runtime.workspace = parsed.workspace;
+  const cli: Record<string, unknown> = {};
+  if (parsed.model) cli.agent = { model: { name: parsed.model } };
+  if (parsed.stateDirectory) cli.state = { journal: { kind: "jsonl", directory: parsed.stateDirectory } };
+  const overlays: ProfileOverlay[] = parsed.overlays.map((file) => ({ kind: "file", file }));
+  return {
+    source,
+    ...(overlays.length > 0 ? { overlays } : {}),
+    ...(Object.keys(cli).length > 0 ? { cli } : {}),
+    additiveCapabilityRoots: parsed.capabilityRoots,
+    additiveCapabilities: parsed.capabilities,
+    env,
+    runtime,
+    contract: genericContract(env),
+    ...(contribution ? { contributions: [contribution] } : {}),
+  };
+}
+
+function generatedProfile(
+  parsed: ParsedOptions,
+  env: Readonly<Record<string, string | undefined>>,
+  injected?: ModelAdapter,
+): ProfileSource {
+  if (!parsed.workspace) throw new Error("--workspace is required without --profile");
+  const modelName = parsed.model ?? (injected ? env.OPENAI_MODEL ?? "scripted" : requiredValue(env, "OPENAI_MODEL"));
+  const select = ["nervus/filesystem"];
+  const configure: Record<string, unknown> = {
+    "nervus/filesystem": { root: { $runtime: "workspace" } },
+  };
+  if (!injected) {
+    select.unshift("nervus/openai-compatible");
+    const compatibility = optionalEnum(env.OPENAI_COMPATIBILITY, ["openai", "deepseek"] as const, "OPENAI_COMPATIBILITY");
+    const instructionRole = optionalEnum(env.OPENAI_INSTRUCTION_ROLE, ["developer", "system"] as const, "OPENAI_INSTRUCTION_ROLE");
+    configure["nervus/openai-compatible"] = {
+      baseUrl: requiredValue(env, "OPENAI_BASE_URL"),
+      apiKey: { $env: "OPENAI_API_KEY" },
+      ...(compatibility ? { compatibility } : {}),
+      ...(instructionRole ? { instructionRole } : {}),
+      ...(compatibility === "deepseek"
+        ? { extraBody: { thinking: { type: "enabled" }, reasoning_effort: env.DEEPSEEK_REASONING_EFFORT ?? "high" } }
+        : {}),
+    };
+  }
+  return {
+    kind: "data",
+    label: "nervus-cli-default",
+    baseDirectory: parsed.workspace,
+    value: {
+      profileVersion: 2,
+      id: "nervus-cli-default",
+      host: { type: "nervus-cli", options: {} },
+      capabilities: { roots: [], select, configure },
+      agent: {
+        id: "nervus-cli-agent",
+        model: { adapter: injected?.id ?? "openai-compatible/chat", name: modelName, maxOutputTokens: 8_192 },
+        instructions: "You are a Tool-using Agent operating in an explicit workspace. Use relative paths, inspect evidence before making claims, and report Tool failures honestly.",
+        tools: ["fs/read", "fs/list", "fs/write", "shell/run"],
+        skills: [],
+        limits: { maxSteps: 24, maxToolCalls: 64, maxToolCallsPerStep: 8, maxModelAttempts: 32 },
+        timeouts: { modelMs: 300_000, toolMs: 60_000 },
+      },
+      state: { journal: { kind: "jsonl", directory: parsed.stateDirectory ?? resolve(parsed.workspace, ".nervus/sessions") } },
+      execution: {
+        concurrency: { maxActiveTurns: 8, maxModelCalls: 4, maxToolCalls: 16 },
+        retry: { baseDelayMs: 100, maxDelayMs: 1_000 },
+      },
+    },
+  };
+}
+
+function genericContract(env: Readonly<Record<string, string | undefined>>): HostContract {
+  return {
+    id: "nervus/generic-host",
+    version: "1.0.0",
+    digest: digest("nervus/generic-host@1"),
+    hostType: "nervus-cli",
+    hostOptionsSchema: { type: "object", additionalProperties: false },
+    runtime: { workspace: "string" },
+    builtInCapabilityRoots: [fileURLToPath(new URL("../../capabilities", import.meta.url))],
+    defaultStateDirectory({ profile }) {
+      const identity = profile.sources.at(-1)?.path ?? `${profile.baseDirectory}:${profile.profileId}`;
+      const root = env.XDG_STATE_HOME ?? resolve(homedir(), ".local/state");
+      return resolve(root, "nervus", "profiles", digest(identity).slice(0, 20), "sessions");
+    },
+  };
+}
+
+function modelContribution(model: ModelAdapter): HostContribution {
+  const plugin: Plugin.Object<void> = {
+    name: `nervus/injected-model/${model.id}`,
+    inject: ["models"],
+    apply(ctx) {
+      ctx.models.register(model);
+    },
+  };
+  return {
+    id: `nervus/injected-model/${model.id}`,
+    version: String(model.revision ?? 1),
+    digest: digest(JSON.stringify({ id: model.id, revision: model.revision ?? 1, capabilities: model.capabilities ?? {} })),
+    provides: [{ kind: "model", id: model.id }],
+    plugin,
+  };
+}
+
+function parseOptions(argv: readonly string[], defaults: { readonly sessionId?: string } = {}): ParsedOptions {
   let workspace: string | undefined;
-  let sessionsDirectory: string | undefined;
+  let stateDirectory: string | undefined;
   let sessionId = defaults.sessionId;
   let createNew = false;
   let profile: string | undefined;
+  let model: string | undefined;
+  let json = false;
   const prompt: string[] = [];
   const capabilityRoots: string[] = [];
   const capabilities: string[] = [];
-
+  const overlays: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--workspace") {
-      workspace = argv[++index];
-    } else if (argument === "--sessions-dir") {
-      sessionsDirectory = argv[++index];
-    } else if (argument === "--session") {
-      sessionId = argv[++index];
-    } else if (argument === "--new") {
-      createNew = true;
-    } else if (argument === "--capability-root") {
-      const value = argv[++index];
-      if (!value) throw new Error("--capability-root requires a path");
-      capabilityRoots.push(resolve(value));
-    } else if (argument === "--capability") {
-      const value = argv[++index];
-      if (!value) throw new Error("--capability requires a Package ID");
-      capabilities.push(value);
-    } else if (argument === "--profile") {
-      const value = argv[++index];
-      if (!value) throw new Error("--profile requires a path");
-      profile = resolve(value);
-    } else if (argument?.startsWith("--")) {
-      throw new Error(`Unknown option: ${argument}`);
-    } else if (argument !== undefined) {
-      prompt.push(argument);
-    }
+    if (argument === "--workspace") workspace = requiredArgument(argv[++index], "--workspace");
+    else if (argument === "--sessions-dir" || argument === "--state-dir") stateDirectory = requiredArgument(argv[++index], argument);
+    else if (argument === "--session") sessionId = requiredArgument(argv[++index], "--session");
+    else if (argument === "--new") createNew = true;
+    else if (argument === "--capability-root") capabilityRoots.push(resolve(requiredArgument(argv[++index], "--capability-root")));
+    else if (argument === "--capability") capabilities.push(requiredArgument(argv[++index], "--capability"));
+    else if (argument === "--profile") profile = resolve(requiredArgument(argv[++index], "--profile"));
+    else if (argument === "--overlay") overlays.push(resolve(requiredArgument(argv[++index], "--overlay")));
+    else if (argument === "--model") model = requiredArgument(argv[++index], "--model");
+    else if (argument === "--json") json = true;
+    else if (argument?.startsWith("--")) throw new Error(`Unknown option: ${argument}`);
+    else if (argument !== undefined) prompt.push(argument);
   }
-
-  if (!workspace) throw new Error("--workspace is required");
-  const resolvedWorkspace = resolve(workspace);
   return {
-    workspace: resolvedWorkspace,
-    sessionsDirectory: resolve(
-      sessionsDirectory ?? resolve(resolvedWorkspace, ".nervus/sessions"),
-    ),
+    ...(workspace ? { workspace: resolve(workspace) } : {}),
+    ...(stateDirectory ? { stateDirectory: resolve(stateDirectory) } : {}),
     ...(sessionId ? { sessionId } : {}),
     createNew,
     prompt: prompt.join(" "),
     capabilityRoots,
     capabilities,
     ...(profile ? { profile } : {}),
+    overlays,
+    ...(model ? { model } : {}),
+    json,
   };
 }
 
-function createEnvironmentModel(
-  env: Readonly<Record<string, string | undefined>>,
-): ModelAdapter {
-  const compatibility = env.OPENAI_COMPATIBILITY;
-  if (
-    compatibility !== undefined &&
-    compatibility !== "openai" &&
-    compatibility !== "deepseek"
-  ) {
-    throw new Error("OPENAI_COMPATIBILITY must be openai or deepseek");
-  }
-  const instructionRole = env.OPENAI_INSTRUCTION_ROLE;
-  if (
-    instructionRole !== undefined &&
-    instructionRole !== "developer" &&
-    instructionRole !== "system"
-  ) {
-    throw new Error("OPENAI_INSTRUCTION_ROLE must be developer or system");
-  }
-  return new OpenAICompatibleChatAdapter({
-    id: "nervus-cli-model",
-    baseUrl: requiredValue(env, "OPENAI_BASE_URL"),
-    apiKey: requiredValue(env, "OPENAI_API_KEY"),
-    ...(compatibility ? { compatibility } : {}),
-    ...(instructionRole ? { instructionRole } : {}),
-    ...(compatibility === "deepseek"
-      ? {
-          extraBody: {
-            thinking: { type: "enabled" },
-            reasoning_effort: env.DEEPSEEK_REASONING_EFFORT ?? "high",
-          },
-        }
-      : {}),
-  });
+function legacyStateDirectory(parsed: ParsedOptions): string {
+  if (parsed.stateDirectory) return parsed.stateDirectory;
+  if (!parsed.workspace) throw new Error("--workspace or --state-dir is required");
+  return resolve(parsed.workspace, ".nervus/sessions");
 }
 
-function requiredValue(
-  env: Readonly<Record<string, string | undefined>>,
-  name: string,
-): string {
+function requiredArgument(value: string | undefined, option: string): string {
+  if (!value) throw new Error(`${option} requires a value`);
+  return value;
+}
+
+function requiredValue(env: Readonly<Record<string, string | undefined>>, name: string): string {
   const value = env[name];
   if (!value) throw new Error(`Set ${name} before starting chat`);
   return value;
+}
+
+function optionalEnum<T extends string>(value: string | undefined, values: readonly T[], name: string): T | undefined {
+  if (value === undefined) return undefined;
+  if (!values.includes(value as T)) throw new Error(`${name} must be ${values.join(" or ")}`);
+  return value as T;
 }
 
 function countValues(values: readonly string[]): Record<string, number> {
@@ -395,25 +425,23 @@ function countValues(values: readonly string[]): Record<string, number> {
   }, {});
 }
 
-function collectUsage(events: Awaited<ReturnType<Session["events"]>>) {
-  return events.reduce(
-    (usage, event) => {
-      if (
-        event.payload.type === "model/call-completed" &&
-        event.payload.usage
-      ) {
-        usage.inputTokens += event.payload.usage.inputTokens;
-        usage.outputTokens += event.payload.usage.outputTokens;
-        usage.totalTokens += event.payload.usage.totalTokens;
-      }
-      return usage;
-    },
-    { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-  );
+function collectUsage(events: readonly { readonly payload: any }[]) {
+  return events.reduce((usage, event) => {
+    if (event.payload.type === "model/call-completed" && event.payload.usage) {
+      usage.inputTokens += event.payload.usage.inputTokens;
+      usage.outputTokens += event.payload.usage.outputTokens;
+      usage.totalTokens += event.payload.usage.totalTokens;
+    }
+    return usage;
+  }, { inputTokens: 0, outputTokens: 0, totalTokens: 0 });
 }
 
 function contentText(content: readonly { readonly type: string; readonly text?: string }[]) {
   return content.map((block) => block.text ?? `[${block.type}]`).join(" ");
+}
+
+function digest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function formatError(error: unknown): string {
@@ -421,36 +449,14 @@ function formatError(error: unknown): string {
 }
 
 function writeUsage(io: CliIO): void {
-  io.write(
-    [
-      "Usage:",
-      "  nervus chat --workspace <path> [--session <id>] [--new] [prompt]",
-      "  nervus sessions list --workspace <path>",
-      "  nervus sessions inspect <id> --workspace <path>",
-      "  nervus sessions resume <id> --workspace <path> [prompt]",
-      "",
-    ].join("\n"),
-  );
+  io.write([
+    "Usage:",
+    "  nervus chat [--profile <file>] [--overlay <file>] [--workspace <path>] [--session <id>] [--new] [prompt]",
+    "  nervus sessions list [--profile <file>] [--workspace <path>]",
+    "  nervus sessions inspect <id> [--profile <file>] [--workspace <path>]",
+    "  nervus sessions resume <id> [--profile <file>] [--workspace <path>] [prompt]",
+    "  nervus profiles validate <file>",
+    "  nervus profiles explain <file> [--workspace <path>] [--json]",
+    "",
+  ].join("\n"));
 }
-
-function asRecord(value: unknown): Record<string, any> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : undefined;
-}
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-const GENERIC_PROFILE_CONTRACT = {
-  hostType: "nervus-cli",
-  runtime: { workspace: "string" },
-  schema: {
-    type: "object",
-    properties: {
-      profileVersion: { const: 1 }, id: { type: "string" }, extends: { type: "string" },
-      host: { type: "object", properties: { type: { const: "nervus-cli" }, options: { type: "object", additionalProperties: true } }, required: ["type"], additionalProperties: false },
-      capabilities: { type: "object", additionalProperties: true },
-      model: { type: "object", properties: { name: { type: "string" }, apiKey: { "x-secret": true }, baseUrl: { type: "string" } }, additionalProperties: true },
-      agent: { type: "object", additionalProperties: true }, state: { type: "object", additionalProperties: true },
-    },
-    required: ["profileVersion", "id", "host", "model", "agent"], additionalProperties: false,
-  },
-} as const;

@@ -14,6 +14,9 @@ importers:
       '@nervus/capability-library':
         specifier: workspace:*
         version: link:packages/capability-library
+      '@nervus/host':
+        specifier: workspace:*
+        version: link:packages/host
       '@nervus/profile':
         specifier: workspace:*
         version: link:packages/profile
@@ -69,6 +72,21 @@ importers:
       cordis:
         specifier: 4.0.0-rc.9
         version: 4.0.0-rc.9
+
+  packages/host:
+    dependencies:
+      '@nervus/capability-library':
+        specifier: workspace:*
+        version: link:../capability-library
+      '@nervus/profile':
+        specifier: workspace:*
+        version: link:../profile
+      cordis:
+        specifier: 4.0.0-rc.9
+        version: 4.0.0-rc.9
+      nervus:
+        specifier: workspace:*
+        version: link:../..
 
   packages/profile:
     dependencies:

@@ -664,7 +664,30 @@ describe("Reference Coding Host", () => {
     const stateDirectory = await mkdtemp(join(tmpdir(), "nervus-code-profile-state-"));
     const profileDirectory = await mkdtemp(join(tmpdir(), "nervus-code-profiles-"));
     const profile = join(profileDirectory, "coding.yaml");
-    await writeFile(profile, `profileVersion: 1\nid: coding-profile\nhost:\n  type: nervus-code\n  options: {}\ncapabilities:\n  roots: []\n  select: [nervus/filesystem]\n  configure:\n    nervus/filesystem:\n      root:\n        $runtime: workspace\nmodel:\n  name: profile-model\n  apiKey:\n    $env: API_KEY\nagent:\n  tools: [fs/list]\n  skills: []\n`, "utf8");
+    await writeFile(profile, `profileVersion: 2
+id: coding-profile
+host:
+  type: nervus-code
+  options: {}
+capabilities:
+  roots: []
+  select: [nervus/filesystem, nervus/openai-compatible]
+  configure:
+    nervus/filesystem:
+      root:
+        $runtime: workspace
+    nervus/openai-compatible:
+      baseUrl: https://example.invalid
+      apiKey:
+        $env: API_KEY
+agent:
+  id: coding-profile-agent
+  model:
+    adapter: scripted/coding-profile
+    name: profile-model
+  tools: [fs/list]
+  skills: []
+`, "utf8");
     const io = captureIO();
     const model: ModelAdapter = {
       id: "scripted/coding-profile",
@@ -681,7 +704,9 @@ describe("Reference Coding Host", () => {
         "--session", "profile-session", "--profile", profile,
         "profile task",
       ], { io, env: { OPENAI_MODEL: "ignored", API_KEY: "secret-value" }, modelAdapter: model })).resolves.toBe(0);
-      const resolution = await readFile(join(stateDirectory, "profile-resolution.json"), "utf8");
+      const resolutionDirectory = join(stateDirectory, ".host-assembly", "resolutions");
+      const [resolutionFile] = await readdir(resolutionDirectory);
+      const resolution = await readFile(join(resolutionDirectory, resolutionFile!), "utf8");
       expect(resolution).toContain("coding-profile");
       expect(resolution).toContain("nervus/filesystem");
       expect(resolution).not.toContain("secret-value");

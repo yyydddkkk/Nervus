@@ -199,8 +199,22 @@ Detailed blueprint: [plans/m14-profile-yaml.md](./plans/m14-profile-yaml.md).
 - Parse and freeze one Profile per Host startup; require restart for changes and defer watchers, HMR, online switching, and per-Turn reload.
 - Fail before Plugin effects with stable ProfileError codes for parsing, Schema, path, inheritance, Host contract, reference, secret, overlay, Capability configuration, and Resolution failures.
 
+## M15: Profile-driven Host Assembly
+
+Status: complete.
+
+Detailed blueprint: [plans/m15-profile-driven-host-assembly.md](./plans/m15-profile-driven-host-assembly.md).
+
+- Introduce strict Profile v2 whose complete AgentSpec, Capability configuration, state, Kernel controls, and Host options drive runtime assembly.
+- Split Capability planning from executable instantiation and strengthen Package content identity with declared artifacts.
+- Package the OpenAI-compatible Model Adapter as `nervus/openai-compatible` with static identity `openai-compatible/chat`.
+- Add shared `@nervus/host` Host Assembly, attributable HostContributions, effective defaults, immutable redacted HostAssemblyResolution, and lifecycle ownership.
+- Migrate both existing Hosts to the shared path while preserving the generic `chat` and Coding `run/resume` interaction models.
+- Add ordered Overlay files, explicit Profile validation/explanation, optional generic workspace, attributable Profile changes on Session resume, and machine-readable one-shot output.
+- Verify deterministic behavior plus disposable live DeepSeek generic and Coding scenarios with leak scans.
+
 ## Deferred
 
 - Memory plugins.
-- YAML loading, HMR, UI, multi-process or distributed execution.
+- HMR, UI, multi-process or distributed execution.
 - Permissions, approvals, sandboxing, cross-model fallback, and npm publication.

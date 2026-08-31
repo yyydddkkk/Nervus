@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "acceptedAt": "2026-08-31",
+  "provider": "DeepSeek through nervus/openai-compatible",
+  "model": "deepseek-v4-flash",
+  "generic": {
+    "sessionId": "m15-generic",
+    "turns": 2,
+    "toolIds": ["fs/list", "fs/read", "fs/read"],
+    "assemblyDigests": [
+      "40ec8885c1cad57085a433cad456214d9e79e8d5fc1a395c281ad45e2ea2222f",
+      "50e74465717d377a6433dc35d878a1dd89e998c6acca9fea90a5c805ac2a24fd"
+    ],
+    "profileChangeReported": true
+  },
+  "coding": {
+    "sessionId": "m15-coding",
+    "status": "completed",
+    "toolIds": [
+      "fs/list",
+      "shell/run",
+      "fs/list",
+      "fs/list",
+      "fs/read",
+      "fs/read",
+      "fs/read",
+      "fs/read",
+      "fs/write",
+      "shell/run",
+      "shell/run"
+    ],
+    "changedFiles": ["src/math.js"],
+    "verificationPassed": true
+  },
+  "secretLeakHits": 0
+}

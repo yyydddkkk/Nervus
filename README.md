@@ -2,7 +2,7 @@
 
 Nervus is an embeddable TypeScript semantic kernel for building pluggable, model-driven agents on top of Cordis.
 
-The M0–M11 roadmap is implemented, with concrete Memory plugins intentionally deferred. Nervus remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
+The M0–M15 roadmap is implemented, with concrete Memory plugins intentionally deferred. Nervus remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
 
 ## Development
 
@@ -135,12 +135,23 @@ Compaction calls use the normal timeout, retry, cancellation, concurrency, usage
 
 ## Capability Library
 
-`@nervus/capability-library` resolves trusted local Capability Packages from explicit roots. Packages use strict `capability.json` manifests, dependency/Bundle resolution, optional config Schema, and `CapabilityFactory(config) -> Cordis Plugin`. Both existing Hosts load the shared `nervus/filesystem` Package and persist `capability-resolution.json`.
+`@nervus/capability-library` resolves trusted local Capability Packages from explicit roots. Packages use strict `capability.json` manifests, dependency/Bundle resolution, optional config Schema, declared content artifacts, and `CapabilityFactory(config) -> Cordis Plugin`. Side-effect-free `planCapabilityLibrary()` powers validation/explanation; `instantiateCapabilityPlan()` rechecks content before importing entries. Both existing Hosts load the shared `nervus/filesystem` and `nervus/openai-compatible` Packages through Host Assembly.
 
 Additional packages can be enabled repeatedly with `--capability-root <path>` and `--capability <id>`. Installation only makes a Package resolvable; selection remains explicit.
 
 ## Profile and YAML
 
-`@nervus/profile` loads a strict YAML 1.2 Profile with one parent, ordered overlays, structured `$env`/`$runtime` references, secret redaction, and stable ProfileError codes. Both Hosts accept `--profile <file>` and persist a redacted `profile-resolution.json` containing the corresponding CapabilityResolution.
+`@nervus/profile` loads strict Profile v2 YAML 1.2 with one parent, ordered overlays, structured `$env`/`$runtime` references, effective defaults, secret redaction, and stable ProfileError codes. Profile v1 is rejected with an explicit migration error. Both Hosts accept `--profile <file>` and repeatable `--overlay <file>`.
 
-Profile files are read once at Host startup. They do not contain tasks, Session history, Package installation, Agent workflows, or literal secret values.
+`@nervus/host` combines a Profile, CapabilityPlan, Journal, Kernel controls, complete AgentSpec, and named HostContributions into one disposable HostAssembly. It persists immutable secret-redacted HostAssemblyResolutions and attributable Session assembly references. A changed Profile may resume the same Agent identity and is reported visibly; Profile-backed Sessions require an explicit Profile on resume.
+
+Validate or explain without starting an Agent:
+
+```sh
+pnpm nervus:dev -- profiles validate ./agent.yaml
+pnpm nervus:dev -- profiles explain ./agent.yaml --workspace ./my-project --json
+```
+
+Profile files are read once at Host startup. They do not contain tasks, Session history, Package installation, Agent workflows, long-term Memory, or literal secret values. The generic CLI intentionally has no `run` command: `chat <prompt>` is one-shot, while `chat` without a prompt is interactive. The Coding Host retains its existing task-oriented `run`/`resume` commands.
+
+The complete M15 acceptance, including real DeepSeek generic and Coding Profiles, is recorded in [docs/evidence/m15-profile-driven-host-assembly.md](./docs/evidence/m15-profile-driven-host-assembly.md).

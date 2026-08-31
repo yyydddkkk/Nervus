@@ -8,8 +8,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
-      "@nervus/capability-library": ["./packages/capability-library/dist/index.d.ts"]
-      ,"@nervus/profile": ["./packages/profile/dist/index.d.ts"]
+      "@nervus/capability-library": ["./packages/capability-library/dist/index.d.ts"],
+      "@nervus/host": ["./packages/host/dist/index.d.ts"],
+      "@nervus/profile": ["./packages/profile/dist/index.d.ts"],
+      "nervus/core": ["./src/core.ts"]
     },
     "types": ["node"]
   },

@@ -11,18 +11,24 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "default": "./dist/core.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "pnpm build:capability-library && pnpm build:profile && pnpm build:kernel && pnpm build:coding-host",
+    "build": "pnpm build:capability-library && pnpm build:profile && pnpm build:core && pnpm build:host && pnpm build:kernel && pnpm build:coding-host",
     "build:capability-library": "pnpm --dir packages/capability-library build",
     "build:profile": "pnpm --dir packages/profile build",
+    "build:core": "tsc -p tsconfig.core.build.json",
+    "build:host": "pnpm --dir packages/host build",
     "build:kernel": "tsc -p tsconfig.build.json",
     "build:coding-host": "pnpm --dir apps/coding-agent build",
-    "typecheck": "tsc -p tsconfig.json && pnpm --dir packages/capability-library typecheck && pnpm --dir packages/profile typecheck && pnpm --dir apps/coding-agent typecheck",
+    "typecheck": "tsc -p tsconfig.json && pnpm --dir packages/capability-library typecheck && pnpm --dir packages/profile typecheck && pnpm --dir packages/host typecheck && pnpm --dir apps/coding-agent typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -30,6 +36,7 @@
     "smoke:deepseek:tools": "node --env-file=.env --import tsx examples/deepseek-tool-agent.ts",
     "smoke:deepseek:coding": "pnpm build:kernel && node --env-file=.env --import tsx examples/deepseek-coding-host.ts",
     "smoke:deepseek:stabilization": "pnpm build && node --env-file=.env --import tsx examples/deepseek-coding-stabilization.ts",
+    "smoke:deepseek:assembly": "pnpm build && node --env-file=.env --import tsx examples/deepseek-profile-host-assembly.ts",
     "nervus:dev": "node --env-file=.env --import tsx src/cli.ts",
     "nervus-code:dev": "pnpm build:kernel && node --env-file=.env --import tsx apps/coding-agent/src/cli.ts"
   },
@@ -39,6 +46,7 @@
   "packageManager": "pnpm@11.21.0",
   "dependencies": {
     "@nervus/capability-library": "workspace:*",
+    "@nervus/host": "workspace:*",
     "@nervus/profile": "workspace:*",
     "@modelcontextprotocol/client": "2.0.0",
     "ajv": "8.20.0",
