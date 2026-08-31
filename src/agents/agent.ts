@@ -5,6 +5,7 @@ import type { ContextContributorRef } from "../context/context.js";
 import type { CallTimeouts } from "../kernel/options.js";
 import { KernelError } from "../kernel/error.js";
 import type { SkillRef } from "../skills/skills.js";
+import type { ToolAuthorizerRef } from "../tools/authorization.js";
 
 export interface ModelRef {
   readonly adapter: string;
@@ -37,6 +38,7 @@ export interface AgentSnapshot {
   readonly instructions: readonly ContentBlock[];
   readonly tools: readonly string[];
   readonly toolRevisions: Readonly<Record<string, number>>;
+  readonly toolAuthorizer?: ToolAuthorizerRef;
   readonly limits: TurnLimits;
   readonly timeouts: CallTimeouts;
   readonly skills: readonly SkillRef[];
@@ -154,6 +156,7 @@ export class AgentsModule extends Service {
           tools.map((toolId) => [toolId, this.ctx.tools.revision(toolId)]),
         ),
       ),
+      toolAuthorizer: this.ctx.toolAuthorization.ref(),
       limits: Object.freeze({ ...DEFAULT_LIMITS, ...spec.limits }),
       timeouts: Object.freeze({ ...this.defaultTimeouts, ...spec.timeouts }),
       skills: Object.freeze(skills.map((skill) => Object.freeze({ ...skill }))),

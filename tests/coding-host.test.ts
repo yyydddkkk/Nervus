@@ -47,6 +47,211 @@ function captureIO(): CodingCliIO & {
 }
 
 describe("Reference Coding Host", () => {
+  it("fails before a Turn when Supervised Mode has no Approval Adapter", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "nervus-code-no-approval-workspace-"));
+    const stateDirectory = await mkdtemp(join(tmpdir(), "nervus-code-no-approval-state-"));
+    const io = captureIO();
+    const model: ModelAdapter = {
+      id: "scripted/coding-no-approval",
+      async *generate() {
+        throw new Error("model must not run");
+      },
+    };
+
+    try {
+      await expect(
+        runCodingCli(
+          [
+            "run",
+            "--workspace",
+            workspace,
+            "--state-dir",
+            stateDirectory,
+            "--mode",
+            "supervised",
+            "must fail early",
+          ],
+          {
+            io,
+            env: { OPENAI_MODEL: "scripted" },
+            modelAdapter: model,
+          },
+        ),
+      ).resolves.toBe(1);
+      expect(io.errors.join("")).toContain(
+        "Supervised Mode requires an interactive Approval Adapter",
+      );
+    } finally {
+      await Promise.all([
+        rm(workspace, { recursive: true, force: true }),
+        rm(stateDirectory, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it("attributes a Tool Authorizer mode change between Turns", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "nervus-code-mode-workspace-"));
+    const stateDirectory = await mkdtemp(join(tmpdir(), "nervus-code-mode-state-"));
+    const adapter = (text: string): ModelAdapter => ({
+      id: "scripted/coding-mode-change",
+      async *generate() {
+        yield { type: "text-delta", delta: text };
+        yield { type: "response-completed" };
+      },
+    });
+
+    try {
+      await expect(
+        runCodingCli(
+          [
+            "run",
+            "--workspace",
+            workspace,
+            "--state-dir",
+            stateDirectory,
+            "--session",
+            "mode-session",
+            "first",
+          ],
+          {
+            io: captureIO(),
+            env: { OPENAI_MODEL: "scripted" },
+            modelAdapter: adapter("first"),
+          },
+        ),
+      ).resolves.toBe(0);
+
+      const resumedIO = captureIO();
+      await expect(
+        runCodingCli(
+          [
+            "resume",
+            "mode-session",
+            "--workspace",
+            workspace,
+            "--state-dir",
+            stateDirectory,
+            "--mode",
+            "supervised",
+            "second",
+          ],
+          {
+            io: resumedIO,
+            env: { OPENAI_MODEL: "scripted" },
+            modelAdapter: adapter("second"),
+            approvalAdapter: {
+              async request() {
+                return "deny";
+              },
+            },
+          },
+        ),
+      ).resolves.toBe(0);
+      expect(resumedIO.errors.join("")).toContain("[assembly changed");
+
+      const journal = new JsonlSessionJournal({ directory: stateDirectory });
+      const authorizers = (await journal.read("mode-session"))
+        .filter((event) => event.payload.type === "turn/started")
+        .map((event) => event.payload.type === "turn/started"
+          ? event.payload.agent.toolAuthorizer?.id
+          : undefined);
+      expect(authorizers).toEqual([
+        "nervus/yolo",
+        "nervus-code/supervised",
+      ]);
+    } finally {
+      await Promise.all([
+        rm(workspace, { recursive: true, force: true }),
+        rm(stateDirectory, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it("caches a Supervised approval by Tool ID for one Turn", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "nervus-code-supervised-workspace-"));
+    const stateDirectory = await mkdtemp(join(tmpdir(), "nervus-code-supervised-state-"));
+    const io = captureIO();
+    let approvalCount = 0;
+    const model: ModelAdapter = {
+      id: "scripted/coding-supervised",
+      async *generate(request) {
+        const toolResults = request.messages.filter((message) => message.role === "tool").length;
+        if (toolResults === 0) {
+          yield {
+            type: "tool-call",
+            call: {
+              id: "write-one",
+              toolId: "fs/write",
+              arguments: { path: "one.txt", content: "one\n" },
+            },
+          };
+        } else if (toolResults === 1) {
+          yield {
+            type: "tool-call",
+            call: {
+              id: "write-two",
+              toolId: "fs/write",
+              arguments: { path: "two.txt", content: "two\n" },
+            },
+          };
+        } else {
+          yield { type: "text-delta", delta: "writes approved" };
+        }
+        yield { type: "response-completed" };
+      },
+    };
+
+    try {
+      await expect(
+        runCodingCli(
+          [
+            "run",
+            "--workspace",
+            workspace,
+            "--state-dir",
+            stateDirectory,
+            "--session",
+            "supervised-session",
+            "--mode",
+            "supervised",
+            "write two files",
+          ],
+          {
+            io,
+            env: { OPENAI_MODEL: "scripted" },
+            modelAdapter: model,
+            approvalAdapter: {
+              async request() {
+                approvalCount += 1;
+                return "allow-turn";
+              },
+            },
+          },
+        ),
+      ).resolves.toBe(0);
+      expect(approvalCount).toBe(1);
+      await expect(readFile(join(workspace, "one.txt"), "utf8")).resolves.toBe("one\n");
+      await expect(readFile(join(workspace, "two.txt"), "utf8")).resolves.toBe("two\n");
+
+      const journal = new JsonlSessionJournal({ directory: stateDirectory });
+      const turnStarted = (await journal.read("supervised-session")).find(
+        (event) => event.payload.type === "turn/started",
+      );
+      expect(turnStarted?.payload).toMatchObject({
+        agent: {
+          toolAuthorizer: {
+            id: "nervus-code/supervised",
+          },
+        },
+      });
+    } finally {
+      await Promise.all([
+        rm(workspace, { recursive: true, force: true }),
+        rm(stateDirectory, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
   it("runs one durable coding Session with the Coding Skill and root instructions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "nervus-code-workspace-"));
     const stateDirectory = await mkdtemp(join(tmpdir(), "nervus-code-state-"));

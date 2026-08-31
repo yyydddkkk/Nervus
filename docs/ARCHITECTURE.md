@@ -59,6 +59,7 @@ Agents
 Sessions
 Models
 Tools
+ToolAuthorization
 Context
 Skills
 HistoryCompactor
@@ -72,6 +73,7 @@ Their responsibilities are:
 | Sessions | Accept Inputs, serialize Turns per Session, append SessionEvents, and expose projected state. |
 | Models | Register Model Adapters, normalize streams and errors, apply retry/timeout/concurrency rules, and record usage. |
 | Tools | Register Tools, validate inputs, execute ToolCalls, normalize ToolResults, and manage execution leases. |
+| ToolAuthorization | Apply one Host-selected Tool Authorizer before Tool execution without expanding the AgentSnapshot's selected Tool set. |
 | Context | Collect ContextBlocks, arbitrate the model input budget, and compile ModelRequestSnapshots. |
 | HistoryCompactor | Produce normalized summaries through Models when Context cannot retain prior history. |
 | Skills | Register declarative Skills and resolve eager or Turn-scoped activation. |
@@ -114,6 +116,7 @@ An AgentSnapshot records at least:
 - Agent identity and declaration revision.
 - ModelRef and resolved Model Adapter identity.
 - Selected Tool and Skill identities and revisions.
+- Effective Tool Authorizer identity and revision.
 - ContextContributor identities.
 - Effective limits and timeout configuration.
 
@@ -174,7 +177,8 @@ repeat:
     -> return final output
 
   otherwise:
-    -> execute same-Step ToolCalls
+    -> append same-Step tool/call-started facts
+    -> authorize and execute same-Step ToolCalls
     -> append every ToolResult in original call order
     -> start the next Step
 ```
@@ -278,6 +282,10 @@ It does not receive mutable Session state or write SessionEvents directly. Tools
 ToolResult content supports text, JSON, image references, and resource references. Initial implementations may only emit text and JSON.
 
 All failures inside the ToolCall boundary become an error ToolResult, including timeout, thrown exceptions, and process failure. A missing model response, SessionJournal failure, or Kernel invariant violation cannot be represented as a ToolResult because no valid ToolCall owns that failure.
+
+Every model-issued ToolCall passes through exactly one Tool Authorizer after the AgentSnapshot Tool allowlist and Skill activation checks. The default synchronous YOLO Adapter allows every call inside that Authority Ceiling; a Host may instead provide a Supervised Adapter that denies or waits for human approval. Denial and non-cancellation Authorizer failure become structured error ToolResults, while cancellation retains the existing Turn cancellation semantics.
+
+The Tool Authorizer is execution control, not process or resource isolation. It cannot add an unselected Tool, widen a trusted Tool Adapter's execution contract, or claim to confine an unrestricted shell. Hosts own mode names and approval interaction; containers, virtual machines, SELinux, and similar enforcement remain deployment concerns. See ADR-0013.
 
 ### Same-Step concurrency
 
@@ -480,6 +488,7 @@ The first usable release includes:
 - Scripted and OpenAI-compatible Model Adapters.
 - Context assembly and ModelRequestSnapshot.
 - Tool validation, same-Step concurrency, cancellation, retry, and limits.
+- One Host-selected Tool Authorizer with synchronous YOLO and optional Supervised Host modes.
 - eager and available Skills.
 - `fs/read`, `fs/write`, and `shell/run` reference Tools.
 - Replay and interrupted recovery.
@@ -495,7 +504,7 @@ Explicitly deferred:
 - Memory plugins.
 - HMR and online Profile reload.
 - UI and distributed execution.
-- Permissions, approvals, and sandboxing.
+- Built-in process/resource sandboxing and general resource-permission policy.
 - Cross-model fallback.
 - Public npm release and API stability guarantees.
 
@@ -515,3 +524,4 @@ These statements should remain true across implementations:
 8. A model never receives context that lacks a recorded ModelRequestSnapshot.
 9. A partial model stream never becomes a completed assistant message.
 10. Kernel disposal leaves no active execution lease.
+11. A Tool Authorizer may narrow but never expand the Authority Ceiling frozen by an AgentSnapshot and its trusted Tool Adapters.

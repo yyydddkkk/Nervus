@@ -213,8 +213,21 @@ Detailed blueprint: [plans/m15-profile-driven-host-assembly.md](./plans/m15-prof
 - Add ordered Overlay files, explicit Profile validation/explanation, optional generic workspace, attributable Profile changes on Session resume, and machine-readable one-shot output.
 - Verify deterministic behavior plus disposable live DeepSeek generic and Coding scenarios with leak scans.
 
+## M16: Minimal Tool authorization
+
+Status: complete.
+
+Specification: [GitHub Issue #16](https://github.com/yyydddkkk/Nervus/issues/16). Decision: [ADR-0013](./adr/0013-mediate-tool-calls-through-one-host-selected-authorizer.md).
+
+- Mediate every model-issued ToolCall through exactly one Host-selected Tool Authorizer without expanding the AgentSnapshot Authority Ceiling.
+- Default programmatic callers and both built-in Hosts to a synchronous YOLO Adapter that adds no model-visible work or Journal append.
+- Provide explicit Host-side Supervised Mode with simple Tool-level approval, Turn-local Tool caching, independent same-Step authorization, and fail-closed error ToolResults.
+- Record the Authorizer identity/revision in AgentSnapshot and HostAssemblyResolution while keeping Profile v2 and SessionEvent v1 compatible.
+- Keep process/resource isolation, resource policy languages, multiple Authorizer priorities, durable approval resumption, and Web/network brokerage out of scope.
+- Verify deterministic behavior in `tests/tool-authorization.test.ts`, Host behavior in CLI/Coding Host tests, and non-blocking performance evidence in `docs/evidence/m16-tool-authorization.md`.
+
 ## Deferred
 
 - Memory plugins.
 - HMR, UI, multi-process or distributed execution.
-- Permissions, approvals, sandboxing, cross-model fallback, and npm publication.
+- Built-in sandboxing, general resource-permission policy, cross-model fallback, and npm publication.

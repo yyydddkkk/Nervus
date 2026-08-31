@@ -6,6 +6,7 @@ import { HistoryCompactorModule } from "../context/compactor.js";
 import { ModelsModule } from "../models/model.js";
 import { SessionsModule } from "../sessions/session.js";
 import { SkillsModule } from "../skills/skills.js";
+import { ToolAuthorizationModule } from "../tools/authorization.js";
 import { ToolsModule } from "../tools/tool.js";
 import type { KernelRuntimeOptions } from "./options.js";
 
@@ -16,6 +17,7 @@ export {
   ModelsModule,
   SessionsModule,
   SkillsModule,
+  ToolAuthorizationModule,
   ToolsModule,
 };
 
@@ -29,6 +31,7 @@ export function mountRequiredModules(
     options.retry,
   );
   new ToolsModule(ctx, options.concurrency.maxToolCalls);
+  new ToolAuthorizationModule(ctx, options.toolAuthorizer);
   new ContextModule(ctx);
   new HistoryCompactorModule(ctx);
   new SkillsModule(ctx);

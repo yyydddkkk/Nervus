@@ -2,7 +2,7 @@
 
 Audit date: 2026-08-31.
 
-Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0–M15 [implementation milestones](./IMPLEMENTATION.md), with intentionally deferred items listed below.
+Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0–M16 [implementation milestones](./IMPLEMENTATION.md), with intentionally deferred items listed below.
 
 ## Milestone evidence
 
@@ -24,6 +24,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0
 | M13 Capability Library | Complete | `packages/capability-library`, `capabilities/filesystem`, `tests/capability-library.test.ts`, and `docs/evidence/capability-library.md` prove strict manifests, explicit resolution, Bundle/dependency ordering, configuration, path/error contracts, stable Resolution, and reuse by both Hosts. |
 | M14 Profile/YAML | Complete | `packages/profile`, both Host `--profile` paths, `tests/profile-loader.test.ts`, Host integration tests, and `docs/evidence/profile-yaml.md` prove strict YAML, inheritance/overlay semantics, runtime/env references, secret redaction, Resolution composition, and startup-only assembly. |
 | M15 Profile-driven Host Assembly | Complete | `packages/host`, Profile v2, two-phase Capability planning, `capabilities/openai-compatible`, `tests/host-assembly.test.ts`, expanded Host tests, and `docs/evidence/m15-profile-driven-host-assembly.md` prove complete shared assembly, attributable contributions/resume, immutable redacted evidence, real generic/Coding DeepSeek Profiles, and zero key leakage. |
+| M16 Minimal Tool authorization | Complete | `src/tools/authorization.ts`, `tests/tool-authorization.test.ts`, both Host mode paths, ADR-0013, and `docs/evidence/m16-tool-authorization.md` prove one non-expanding Authorizer, synchronous YOLO, Supervised approval/caching, parallel/cancellation behavior, legacy replay, attribution, and no model-visible or Journal-batch expansion. |
 
 ## Architecture requirements
 
@@ -37,6 +38,7 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0
 | Recovery | `openSession` marks unterminated ModelCalls, ToolCalls, and Turns interrupted; queued Inputs remain durable and require explicit `resumePendingInputs()`. |
 | Models | Async ModelEvent stream supports text, reasoning, ToolCall, usage, completion, and failure. Models enforces timeouts even for non-cooperative Adapters, concurrency, retry classification, backoff, and durable attempts. |
 | Tools | JSON Schema validation precedes execution. Tool failures become ToolResults; parent cancellation receives explicit call terminal facts. Same-Step calls are concurrent, collect-all, and ordered. |
+| Tool authorization | Every model-issued ToolCall crosses one Host-selected Authorizer after the AgentSnapshot Tool allowlist. YOLO is a synchronous allow-all fast path; Supervised decisions are Host-owned, fail closed, and cannot expand the Authority Ceiling. |
 | Context | Contributors return isolated ContextBlocks. Named layers, duplicate rejection, retention, truncation, exact counters, current-Turn preservation, and serializable ModelRequestSnapshots are implemented. |
 | Skills | Declarative Skills support resources metadata, eager and available modes, built-in `skills/activate`, Agent selection checks, and Turn-local activation. |
 | Concurrency and limits | Separate abortable semaphores govern Turns, ModelCalls, and ToolCalls. TurnLimits cover Steps, total ToolCalls, per-Step ToolCalls, and total Model attempts. |
@@ -64,16 +66,17 @@ Scope: the accepted [architecture blueprint](./ARCHITECTURE.md) and completed M0
 8. `model/call-started` durably contains the full ModelRequestSnapshot before Adapter execution.
 9. Models records assistant content only after a terminal `response-completed`; interrupted streams create call failure/interruption facts instead.
 10. Provider lease tests and Kernel disposal tests prove no active registration lease remains after disposal.
+11. Tool authorization tests prove deny/failure never execute the Tool, pending decisions cancel with the Turn, allowed siblings remain independent, and YOLO adds no model-visible work or Journal batch.
 
 ## Explicitly deferred
 
-These are not missing from M0–M15; the accepted blueprint explicitly defers them:
+These are not missing from M0–M16; the accepted blueprint explicitly defers them:
 
 - Concrete Memory plugins.
 - Capability installation, scaffolding, remote registries, and automatic scanning.
 - Multi-Agent routing, workflows, and a durable Job abstraction.
 - HMR, UI, and distributed execution.
-- Permissions, approvals, sandboxing, and cross-model fallback.
+- Built-in sandboxing, general resource-permission policy, and cross-model fallback.
 - Public npm publication and API compatibility guarantees.
 
 ## Verification commands

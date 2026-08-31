@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import {
   assembleHost,
+  createSupervisedToolAuthorizer,
   explainHost,
   recordSessionAssembly,
   type HostAssemblyOptions,
@@ -15,6 +16,100 @@ import { ScriptedModelAdapter } from "nervus";
 import { describe, expect, it } from "vitest";
 
 describe("Host Assembly", () => {
+  it("scopes remembered Supervised approvals to one Turn", async () => {
+    let approvals = 0;
+    const authorizer = createSupervisedToolAuthorizer({
+      id: "fixture/supervised",
+      revision: 1,
+      autoAllowTools: ["fs/read"],
+      approval: {
+        async request() {
+          approvals += 1;
+          return "allow-turn";
+        },
+      },
+    });
+    const call = {
+      id: "write",
+      toolId: "fs/write",
+      arguments: { path: "value.txt" },
+    };
+    const context = (turnId: string, signal: AbortSignal) => ({
+      sessionId: "session",
+      turnId,
+      stepId: "step",
+      callId: call.id,
+      signal,
+    });
+    const firstTurn = new AbortController().signal;
+
+    await expect(authorizer.authorize(
+      call,
+      context("turn-one", firstTurn),
+    )).resolves.toEqual({ status: "allow" });
+    expect(authorizer.authorize(
+      { ...call, id: "write-again" },
+      context("turn-one", firstTurn),
+    )).toEqual({ status: "allow" });
+    expect(authorizer.authorize(
+      { id: "read", toolId: "fs/read", arguments: {} },
+      context("turn-one", firstTurn),
+    )).toEqual({ status: "allow" });
+
+    await expect(authorizer.authorize(
+      call,
+      context("turn-two", new AbortController().signal),
+    )).resolves.toEqual({ status: "allow" });
+    expect(approvals).toBe(2);
+  });
+
+  it("serializes Supervised approval prompts without combining decisions", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    let approvals = 0;
+    const authorizer = createSupervisedToolAuthorizer({
+      id: "fixture/serialized-supervised",
+      revision: 1,
+      autoAllowTools: [],
+      approval: {
+        async request() {
+          approvals += 1;
+          active += 1;
+          maximumActive = Math.max(maximumActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          active -= 1;
+          return "deny";
+        },
+      },
+    });
+    const signal = new AbortController().signal;
+    const context = (callId: string) => ({
+      sessionId: "session",
+      turnId: "turn",
+      stepId: "step",
+      callId,
+      signal,
+    });
+
+    const decisions = await Promise.all([
+      authorizer.authorize(
+        { id: "one", toolId: "fs/write", arguments: {} },
+        context("one"),
+      ),
+      authorizer.authorize(
+        { id: "two", toolId: "shell/run", arguments: {} },
+        context("two"),
+      ),
+    ]);
+
+    expect(decisions).toEqual([
+      { status: "deny", reason: "Operator denied fs/write" },
+      { status: "deny", reason: "Operator denied shell/run" },
+    ]);
+    expect(approvals).toBe(2);
+    expect(maximumActive).toBe(1);
+  });
+
   it("assembles a third-party Host through public APIs and owns idempotent disposal", async () => {
     const root = await mkdtemp(join(tmpdir(), "nervus-third-party-host-"));
     try {

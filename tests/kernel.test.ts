@@ -12,6 +12,7 @@ describe("Kernel", () => {
     expect(kernel.context.sessions.name).toBe("sessions");
     expect(kernel.context.models.name).toBe("models");
     expect(kernel.context.tools.name).toBe("tools");
+    expect(kernel.context.toolAuthorization.name).toBe("toolAuthorization");
     expect(kernel.context.context.name).toBe("context");
     expect(kernel.context.historyCompactor.name).toBe("historyCompactor");
     expect(kernel.context.skills.name).toBe("skills");

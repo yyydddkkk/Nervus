@@ -7,6 +7,7 @@ import type {
   Session,
 } from "../sessions/session.js";
 import type { SessionJournal } from "../sessions/journal.js";
+import type { ToolAuthorizer } from "../tools/authorization.js";
 import { corePlugin } from "./core-plugin.js";
 import { KernelError } from "./error.js";
 import {
@@ -24,6 +25,7 @@ export interface KernelOptions {
   concurrency?: Partial<ConcurrencyLimits>;
   journal?: SessionJournal;
   retry?: Partial<ModelRetryOptions>;
+  toolAuthorizer?: ToolAuthorizer;
 }
 
 export class Kernel {

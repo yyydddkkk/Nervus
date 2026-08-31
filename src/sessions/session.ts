@@ -494,6 +494,25 @@ export class Session {
         return toolError(call, `Skill is not available to this Agent: ${String(skillId)}`);
       }
     }
+    let decision;
+    try {
+      const pending = this.#ctx.toolAuthorization.authorize(call, context);
+      decision = pending instanceof Promise ? await pending : pending;
+    } catch (error) {
+      if (context.signal.aborted) throw context.signal.reason;
+      return authorizationError(
+        call,
+        "TOOL_AUTHORIZER_FAILED",
+        formatError(error),
+      );
+    }
+    if (decision.status === "deny") {
+      return authorizationError(
+        call,
+        "TOOL_AUTHORIZATION_DENIED",
+        decision.reason,
+      );
+    }
     return this.#ctx.tools.execute(call, context, timeoutMs);
   }
 
@@ -528,6 +547,19 @@ function toolError(call: ToolCall, message: string): ToolResult {
     toolId: call.toolId,
     status: "error",
     content: [{ type: "text", text: message }],
+  };
+}
+
+function authorizationError(
+  call: ToolCall,
+  code: "TOOL_AUTHORIZATION_DENIED" | "TOOL_AUTHORIZER_FAILED",
+  message: string,
+): ToolResult {
+  return {
+    callId: call.id,
+    toolId: call.toolId,
+    status: "error",
+    content: [{ type: "json", value: { code, message } }],
   };
 }
 

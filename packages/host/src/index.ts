@@ -28,6 +28,12 @@ import {
   type ContentBlock,
   type Kernel,
   type SessionJournal,
+  type ToolAuthorizer,
+  type ToolAuthorizerRef,
+  type ToolAuthorizationDecision,
+  type ToolCall,
+  type ToolInvocationContext,
+  yoloToolAuthorizer,
 } from "nervus/core";
 
 export type HostAssemblyErrorCode =
@@ -73,6 +79,10 @@ export interface HostContract {
     readonly runtime: Readonly<Record<string, unknown>>;
     readonly effective: Readonly<Record<string, unknown>>;
   }) => string;
+  readonly resolveToolAuthorizer?: (
+    effective: Readonly<Record<string, unknown>>,
+    options: { readonly requireRuntime: boolean },
+  ) => ToolAuthorizer;
 }
 
 export interface HostAssemblyOptions {
@@ -110,6 +120,7 @@ export interface HostAssemblyResolution {
     readonly directory?: string;
   };
   readonly execution: unknown;
+  readonly toolAuthorizer: ToolAuthorizerRef;
   readonly typedAdditions: {
     readonly capabilityRoots: readonly string[];
     readonly capabilities: readonly string[];
@@ -134,6 +145,7 @@ interface PlannedHost {
   readonly journal: SessionJournal;
   readonly stateDirectory?: string;
   readonly execution: Readonly<Record<string, any>>;
+  readonly toolAuthorizer: ToolAuthorizer;
   readonly resolution: HostAssemblyResolution;
 }
 
@@ -171,13 +183,13 @@ export async function validateHostProfile(
 export async function explainHost(
   options: HostAssemblyOptions,
 ): Promise<HostAssemblyResolution> {
-  return (await planHost(options)).resolution;
+  return (await planHost(options, false)).resolution;
 }
 
 export async function assembleHost(options: HostAssemblyOptions): Promise<HostAssembly> {
   let kernel: Kernel | undefined;
   try {
-    const planned = await planHost(options);
+    const planned = await planHost(options, true);
     const capabilityPlugins = await instantiateCapabilityPlan(planned.capabilityPlan);
     kernel = await createKernel({
       journal: planned.journal,
@@ -186,6 +198,7 @@ export async function assembleHost(options: HostAssemblyOptions): Promise<HostAs
         ...capabilityPlugins,
       ],
       ...kernelOptions(planned.execution),
+      toolAuthorizer: planned.toolAuthorizer,
     });
     const agent = await kernel.createAgent(planned.agentSpec);
     let disposal: Promise<void> | undefined;
@@ -277,7 +290,10 @@ interface SessionAssemblyReference {
   readonly agentId: string;
 }
 
-async function planHost(options: HostAssemblyOptions): Promise<PlannedHost> {
+async function planHost(
+  options: HostAssemblyOptions,
+  requireRuntime: boolean,
+): Promise<PlannedHost> {
   const contract = profileContract(options.contract);
   const contributions = collectContributions(options);
   const commonProfileOptions = {
@@ -355,6 +371,10 @@ async function planHost(options: HostAssemblyOptions): Promise<PlannedHost> {
   validateAgentCapabilities(agentSpec, capabilityPlan.resolution, contributions);
   const state = resolveState(effective, profile.resolution, options);
   const execution = record(effective.execution);
+  const toolAuthorizer = options.contract.resolveToolAuthorizer?.(
+    effective,
+    { requireRuntime },
+  ) ?? yoloToolAuthorizer;
   const journal = state.kind === "memory"
     ? new MemorySessionJournal()
     : new JsonlSessionJournal({ directory: state.directory! });
@@ -375,6 +395,10 @@ async function planHost(options: HostAssemblyOptions): Promise<PlannedHost> {
       ...(state.directory ? { directory: state.directory } : {}),
     },
     execution,
+    toolAuthorizer: {
+      id: toolAuthorizer.id,
+      revision: toolAuthorizer.revision,
+    },
     typedAdditions: {
       capabilityRoots: [...(options.additiveCapabilityRoots ?? [])],
       capabilities: [...(options.additiveCapabilities ?? [])],
@@ -392,8 +416,137 @@ async function planHost(options: HostAssemblyOptions): Promise<PlannedHost> {
     journal,
     ...(state.directory ? { stateDirectory: state.directory } : {}),
     execution,
+    toolAuthorizer,
     resolution,
   };
+}
+
+export type ToolApprovalDecision = "deny" | "allow-once" | "allow-turn";
+export type ToolAuthorizationMode = "yolo" | "supervised";
+
+export const toolAuthorizationHostOptionsSchema = Object.freeze({
+  type: "object",
+  properties: {
+    toolAuthorization: {
+      type: "object",
+      properties: {
+        mode: { enum: ["yolo", "supervised"] },
+      },
+      required: ["mode"],
+      additionalProperties: false,
+    },
+  },
+  required: ["toolAuthorization"],
+  additionalProperties: false,
+});
+
+export const toolAuthorizationHostDefaults = Object.freeze({
+  toolAuthorization: Object.freeze({ mode: "yolo" as const }),
+});
+
+export interface ToolApprovalAdapter {
+  request(
+    input: {
+      readonly call: ToolCall;
+      readonly context: ToolInvocationContext;
+    },
+  ): Promise<ToolApprovalDecision>;
+}
+
+export function createSupervisedToolAuthorizer(options: {
+  readonly id: string;
+  readonly revision: number;
+  readonly autoAllowTools: readonly string[];
+  readonly approval: ToolApprovalAdapter;
+}): ToolAuthorizer {
+  const autoAllow = new Set(options.autoAllowTools);
+  const turnApprovals = new WeakMap<AbortSignal, Set<string>>();
+  let promptTail: Promise<void> = Promise.resolve();
+  const allow = Object.freeze({ status: "allow" } as const);
+
+  return Object.freeze({
+    id: options.id,
+    revision: options.revision,
+    authorize(
+      call: ToolCall,
+      context: ToolInvocationContext,
+    ): ToolAuthorizationDecision | Promise<ToolAuthorizationDecision> {
+      if (autoAllow.has(call.toolId)) return allow;
+      const remembered = turnApprovals.get(context.signal);
+      if (remembered?.has(call.toolId)) return allow;
+
+      const request = () => raceApproval(
+        options.approval.request({ call, context }),
+        context.signal,
+      );
+      const decision = promptTail.then(request, request);
+      promptTail = decision.then(() => undefined, () => undefined);
+      return decision.then((result) => {
+        if (result === "allow-turn") {
+          const approved = remembered ?? new Set<string>();
+          approved.add(call.toolId);
+          if (!remembered) turnApprovals.set(context.signal, approved);
+          return allow;
+        }
+        if (result === "allow-once") return allow;
+        return {
+          status: "deny" as const,
+          reason: `Operator denied ${call.toolId}`,
+        };
+      });
+    },
+  });
+}
+
+export function resolveHostToolAuthorizer(
+  effective: Readonly<Record<string, unknown>>,
+  options: {
+    readonly id: string;
+    readonly revision: number;
+    readonly autoAllowTools: readonly string[];
+    readonly approval?: ToolApprovalAdapter;
+    readonly requireRuntime: boolean;
+  },
+): ToolAuthorizer {
+  const host = record(effective.host);
+  const hostOptions = record(host.options);
+  const authorization = record(hostOptions.toolAuthorization);
+  if (authorization.mode !== "supervised") return yoloToolAuthorizer;
+  if (options.requireRuntime && !options.approval) {
+    throw new HostAssemblyError(
+      "HOST_CONSTRAINT",
+      "Supervised Mode requires an interactive Approval Adapter",
+    );
+  }
+  return createSupervisedToolAuthorizer({
+    id: options.id,
+    revision: options.revision,
+    autoAllowTools: options.autoAllowTools,
+    approval: options.approval ?? unavailableApprovalAdapter,
+  });
+}
+
+const unavailableApprovalAdapter: ToolApprovalAdapter = Object.freeze({
+  async request() {
+    throw new Error("Supervised Mode requires an interactive Approval Adapter");
+  },
+});
+
+async function raceApproval<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) throw signal.reason;
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
 }
 
 function profileContract(contract: HostContract): HostProfileContract {

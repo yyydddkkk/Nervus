@@ -47,6 +47,63 @@ function captureIO(): CliIO & {
 }
 
 describe("Nervus CLI", () => {
+  it("runs an approved ToolCall in explicit Supervised Mode", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "nervus-cli-supervised-"));
+    const io = captureIO();
+    let approvalCount = 0;
+    let modelCalls = 0;
+    const model: ModelAdapter = {
+      id: "scripted/cli-supervised",
+      async *generate() {
+        modelCalls += 1;
+        if (modelCalls === 1) {
+          yield {
+            type: "tool-call",
+            call: {
+              id: "write",
+              toolId: "fs/write",
+              arguments: { path: "approved.txt", content: "approved\n" },
+            },
+          };
+        } else {
+          yield { type: "text-delta", delta: "approved" };
+        }
+        yield { type: "response-completed" };
+      },
+    };
+
+    try {
+      await expect(
+        runNervusCli(
+          [
+            "chat",
+            "--workspace",
+            workspace,
+            "--mode",
+            "supervised",
+            "write it",
+          ],
+          {
+            io,
+            modelAdapter: model,
+            approvalAdapter: {
+              async request() {
+                approvalCount += 1;
+                return "allow-once";
+              },
+            },
+          },
+        ),
+      ).resolves.toBe(0);
+      expect(approvalCount).toBe(1);
+      await expect(
+        readFile(join(workspace, "approved.txt"), "utf8"),
+      ).resolves.toBe("approved\n");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("creates, resumes, lists, and inspects a durable Session", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "nervus-cli-"));
     const sessionId = "cli-session";

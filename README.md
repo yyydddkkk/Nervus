@@ -2,7 +2,7 @@
 
 Nervus is an embeddable TypeScript semantic kernel for building pluggable, model-driven agents on top of Cordis.
 
-The M0–M15 roadmap is implemented, with concrete Memory plugins intentionally deferred. Nervus remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
+The M0–M16 roadmap is implemented, with concrete Memory plugins intentionally deferred. Nervus remains private/experimental while its public interface evolves. Its complete design lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), completion evidence lives in [docs/COMPLETION-AUDIT.md](./docs/COMPLETION-AUDIT.md), canonical vocabulary lives in [CONTEXT.md](./CONTEXT.md), architectural decisions live in [docs/adr](./docs/adr), and the implementation sequence lives in [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
 
 ## Development
 
@@ -27,6 +27,7 @@ pnpm build
 - MCP v2 Adapter for remote Tools, Resources, and Prompts over stdio or Streamable HTTP.
 - Root-scoped `fs/read`, `fs/write`, and `shell/run` reference Tools.
 - Durable retry/call facts, transient stream/progress events, cancellation and draining leases.
+- One Host-selected Tool Authorizer with zero-model-overhead YOLO and explicit Supervised modes.
 
 ## OpenAI-compatible smoke test
 
@@ -155,3 +156,13 @@ pnpm nervus:dev -- profiles explain ./agent.yaml --workspace ./my-project --json
 Profile files are read once at Host startup. They do not contain tasks, Session history, Package installation, Agent workflows, long-term Memory, or literal secret values. The generic CLI intentionally has no `run` command: `chat <prompt>` is one-shot, while `chat` without a prompt is interactive. The Coding Host retains its existing task-oriented `run`/`resume` commands.
 
 The complete M15 acceptance, including real DeepSeek generic and Coding Profiles, is recorded in [docs/evidence/m15-profile-driven-host-assembly.md](./docs/evidence/m15-profile-driven-host-assembly.md).
+
+## Tool authorization modes
+
+Both built-in Hosts default to YOLO Mode, which synchronously allows every ToolCall already selected by the AgentSnapshot:
+
+```sh
+pnpm nervus-code:dev -- run --workspace ./my-project --mode yolo "Fix the tests"
+```
+
+Use `--mode supervised` for Host-side approval. Reads, directory listings, and Skill activation proceed automatically; writes, shell commands, and other selected Tools ask for deny, allow-once, or allow-for-this-Turn approval. Tool authorization can only narrow the AgentSnapshot Tool set and trusted Tool Adapter contracts—it is not an OS sandbox, and containers, VMs, SELinux, filesystem isolation, environment filtering, and network policy remain deployment concerns.

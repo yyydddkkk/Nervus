@@ -1,3 +1,12 @@
+import {
+  type ToolAuthorizer,
+  yoloToolAuthorizer,
+} from "../tools/authorization.js";
+import {
+  MemorySessionJournal,
+  type SessionJournal,
+} from "../sessions/journal.js";
+
 export interface CallTimeouts {
   readonly modelMs: number;
   readonly toolMs: number;
@@ -19,6 +28,7 @@ export interface KernelRuntimeOptions {
   readonly concurrency: ConcurrencyLimits;
   readonly journal: SessionJournal;
   readonly retry: ModelRetryOptions;
+  readonly toolAuthorizer: ToolAuthorizer;
 }
 
 const DEFAULT_TIMEOUTS: CallTimeouts = {
@@ -42,6 +52,7 @@ export function resolveKernelRuntimeOptions(options: {
   readonly concurrency?: Partial<ConcurrencyLimits>;
   readonly journal?: SessionJournal;
   readonly retry?: Partial<ModelRetryOptions>;
+  readonly toolAuthorizer?: ToolAuthorizer;
 }): KernelRuntimeOptions {
   return {
     timeouts: Object.freeze({ ...DEFAULT_TIMEOUTS, ...options.timeouts }),
@@ -51,9 +62,6 @@ export function resolveKernelRuntimeOptions(options: {
     }),
     journal: options.journal ?? new MemorySessionJournal(),
     retry: Object.freeze({ ...DEFAULT_RETRY, ...options.retry }),
+    toolAuthorizer: options.toolAuthorizer ?? yoloToolAuthorizer,
   };
 }
-import {
-  MemorySessionJournal,
-  type SessionJournal,
-} from "../sessions/journal.js";

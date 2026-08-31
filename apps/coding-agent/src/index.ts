@@ -8,9 +8,13 @@ import {
   assembleHost,
   explainHost,
   recordSessionAssembly,
+  resolveHostToolAuthorizer,
+  toolAuthorizationHostDefaults,
+  toolAuthorizationHostOptionsSchema,
   type HostAssemblyOptions,
   type HostContract,
   type HostContribution,
+  type ToolApprovalAdapter,
 } from "@nervus/host";
 import type { ProfileOverlay, ProfileSource } from "@nervus/profile";
 import type { Plugin } from "cordis";
@@ -39,6 +43,7 @@ export interface RunCodingCliOptions {
   readonly io: CodingCliIO;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly modelAdapter?: ModelAdapter;
+  readonly approvalAdapter?: ToolApprovalAdapter;
 }
 
 export interface CodingRunRecord {
@@ -70,6 +75,7 @@ interface ParsedInvocation {
   readonly profile?: string;
   readonly overlays: readonly string[];
   readonly model?: string;
+  readonly toolAuthorizationMode?: "yolo" | "supervised";
 }
 
 const CODING_SKILL_ID = "nervus/coding";
@@ -104,7 +110,13 @@ async function runInput(
     codingContribution(rootInstructions),
     ...(options.modelAdapter ? [modelContribution(options.modelAdapter)] : []),
   ];
-  const assemblyInput = codingAssemblyOptions(parsed, env, contributions, options.modelAdapter);
+  const assemblyInput = codingAssemblyOptions(
+    parsed,
+    env,
+    contributions,
+    options.modelAdapter,
+    options.approvalAdapter,
+  );
   const planned = await explainHost(assemblyInput);
   if (!planned.state.directory) {
     throw new Error("nervus-code requires durable JSONL state");
@@ -170,6 +182,7 @@ function codingAssemblyOptions(
   env: Readonly<Record<string, string | undefined>>,
   contributions: readonly HostContribution[],
   injected?: ModelAdapter,
+  approval?: ToolApprovalAdapter,
 ): HostAssemblyOptions {
   const source = parsed.profile
     ? ({ kind: "file", file: parsed.profile, roots: [dirname(parsed.profile)] } satisfies ProfileSource)
@@ -177,6 +190,13 @@ function codingAssemblyOptions(
   const cli: Record<string, unknown> = {};
   if (parsed.model) cli.agent = { model: { name: parsed.model } };
   if (parsed.stateDirectory) cli.state = { journal: { kind: "jsonl", directory: parsed.stateDirectory } };
+  if (parsed.toolAuthorizationMode) {
+    cli.host = {
+      options: {
+        toolAuthorization: { mode: parsed.toolAuthorizationMode },
+      },
+    };
+  }
   const overlays: ProfileOverlay[] = parsed.overlays.map((file) => ({ kind: "file", file }));
   return {
     source,
@@ -186,7 +206,7 @@ function codingAssemblyOptions(
     additiveCapabilities: parsed.capabilities,
     env,
     runtime: { workspace: parsed.workspace },
-    contract: codingContract(env),
+    contract: codingContract(env, approval),
     contributions,
   };
 }
@@ -246,15 +266,23 @@ function generatedProfile(
   };
 }
 
-function codingContract(env: Readonly<Record<string, string | undefined>>): HostContract {
+function codingContract(
+  env: Readonly<Record<string, string | undefined>>,
+  approval?: ToolApprovalAdapter,
+): HostContract {
   return {
     id: "nervus/coding-host",
     version: "1.0.0",
     digest: digest("nervus/coding-host@1"),
     hostType: "nervus-code",
-    hostOptionsSchema: { type: "object", additionalProperties: false },
+    hostOptionsSchema: toolAuthorizationHostOptionsSchema,
     runtime: { workspace: "string" },
-    defaults: { state: { journal: { kind: "jsonl" } } },
+    defaults: {
+      host: {
+        options: toolAuthorizationHostDefaults,
+      },
+      state: { journal: { kind: "jsonl" } },
+    },
     builtInCapabilityRoots: [fileURLToPath(new URL("../../../capabilities", import.meta.url))],
     validate(effective) {
       const host = asRecord(effective.host);
@@ -262,6 +290,15 @@ function codingContract(env: Readonly<Record<string, string | undefined>>): Host
     },
     defaultStateDirectory({ runtime }) {
       return defaultStateDirectory(String(runtime.workspace), env);
+    },
+    resolveToolAuthorizer(effective, { requireRuntime }) {
+      return resolveHostToolAuthorizer(effective, {
+        id: "nervus-code/supervised",
+        revision: 1,
+        autoAllowTools: ["fs/read", "fs/list", "skills/activate"],
+        ...(approval ? { approval } : {}),
+        requireRuntime,
+      });
     },
   };
 }
@@ -344,6 +381,7 @@ async function parseInvocation(
   let json = false;
   let profile: string | undefined;
   let model: string | undefined;
+  let toolAuthorizationMode: "yolo" | "supervised" | undefined;
   const capabilityRoots: string[] = [];
   const capabilities: string[] = [];
   const overlays: string[] = [];
@@ -359,6 +397,13 @@ async function parseInvocation(
     else if (argument === "--profile") profile = resolve(requiredArgument(argv[++index], "--profile"));
     else if (argument === "--overlay") overlays.push(resolve(requiredArgument(argv[++index], "--overlay")));
     else if (argument === "--model") model = requiredArgument(argv[++index], "--model");
+    else if (argument === "--mode") {
+      toolAuthorizationMode = optionalEnum(
+        requiredArgument(argv[++index], "--mode"),
+        ["yolo", "supervised"] as const,
+        "--mode",
+      );
+    }
     else if (argument?.startsWith("--")) throw new Error(`Unknown option: ${argument}`);
     else if (argument !== undefined) input.push(argument);
   }
@@ -376,6 +421,7 @@ async function parseInvocation(
     ...(profile ? { profile } : {}),
     overlays,
     ...(model ? { model } : {}),
+    ...(toolAuthorizationMode ? { toolAuthorizationMode } : {}),
   };
 }
 
@@ -510,8 +556,8 @@ function digest(value: string): string {
 function writeUsage(io: CodingCliIO): void {
   io.write([
     "Usage:",
-    "  nervus-code run --workspace <path> [--profile <file>] [--overlay <file>] [--session <id>] [--state-dir <path>] <task>",
-    "  nervus-code resume <session-id> --workspace <path> [--profile <file>] [--overlay <file>] [--state-dir <path>] <follow-up>",
+    "  nervus-code run --workspace <path> [--profile <file>] [--overlay <file>] [--mode yolo|supervised] [--session <id>] [--state-dir <path>] <task>",
+    "  nervus-code resume <session-id> --workspace <path> [--profile <file>] [--overlay <file>] [--mode yolo|supervised] [--state-dir <path>] <follow-up>",
     "",
   ].join("\n"));
 }

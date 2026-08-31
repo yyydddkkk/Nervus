@@ -111,6 +111,12 @@ export type {
   ToolResult,
 } from "./tools/tool.js";
 export {
+  yoloToolAuthorizer,
+  type ToolAuthorizationDecision,
+  type ToolAuthorizer,
+  type ToolAuthorizerRef,
+} from "./tools/authorization.js";
+export {
   localToolsPlugin,
   type LocalToolsOptions,
 } from "./tools/local.js";
@@ -125,5 +131,6 @@ export {
   ModelsModule,
   SessionsModule,
   SkillsModule,
+  ToolAuthorizationModule,
   ToolsModule,
 } from "./kernel/modules.js";

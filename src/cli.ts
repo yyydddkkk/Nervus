@@ -28,5 +28,35 @@ const io: CliIO = {
   },
 };
 
-process.exitCode = await runNervusCli(process.argv.slice(2), { io });
+const approvalAdapter = process.stdin.isTTY
+  ? {
+      request({ call, context }: {
+        readonly call: { readonly toolId: string; readonly arguments: Readonly<Record<string, unknown>> };
+        readonly context: { readonly signal: AbortSignal };
+      }) {
+        return new Promise<"deny" | "allow-once" | "allow-turn">((resolve, reject) => {
+          const onAbort = () => reject(context.signal.reason);
+          context.signal.addEventListener("abort", onAbort, { once: true });
+          readline.question(
+            `Approve ${call.toolId} ${JSON.stringify(call.arguments)}? [y]es/[t]urn/[n]o `,
+            { signal: context.signal },
+            (answer) => {
+              context.signal.removeEventListener("abort", onAbort);
+              const normalized = answer.trim().toLowerCase();
+              resolve(normalized === "t" || normalized === "turn"
+                ? "allow-turn"
+                : normalized === "y" || normalized === "yes"
+                  ? "allow-once"
+                  : "deny");
+            },
+          );
+        });
+      },
+    }
+  : undefined;
+
+process.exitCode = await runNervusCli(process.argv.slice(2), {
+  io,
+  ...(approvalAdapter ? { approvalAdapter } : {}),
+});
 readline.close();

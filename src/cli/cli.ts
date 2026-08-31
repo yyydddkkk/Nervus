@@ -8,11 +8,15 @@ import {
   assembleHost,
   explainHost,
   recordSessionAssembly,
+  resolveHostToolAuthorizer,
+  toolAuthorizationHostDefaults,
+  toolAuthorizationHostOptionsSchema,
   validateHostProfile,
   type HostAssembly,
   type HostAssemblyOptions,
   type HostContract,
   type HostContribution,
+  type ToolApprovalAdapter,
 } from "@nervus/host";
 import type { ProfileOverlay, ProfileSource } from "@nervus/profile";
 import type { Plugin } from "cordis";
@@ -34,6 +38,7 @@ export interface RunNervusCliOptions {
   readonly io: CliIO;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly modelAdapter?: ModelAdapter;
+  readonly approvalAdapter?: ToolApprovalAdapter;
 }
 
 interface ParsedOptions {
@@ -48,6 +53,7 @@ interface ParsedOptions {
   readonly overlays: readonly string[];
   readonly model?: string;
   readonly json: boolean;
+  readonly toolAuthorizationMode?: "yolo" | "supervised";
 }
 
 export async function runNervusCli(
@@ -253,6 +259,13 @@ function assemblyOptions(parsed: ParsedOptions, options: RunNervusCliOptions): H
   const cli: Record<string, unknown> = {};
   if (parsed.model) cli.agent = { model: { name: parsed.model } };
   if (parsed.stateDirectory) cli.state = { journal: { kind: "jsonl", directory: parsed.stateDirectory } };
+  if (parsed.toolAuthorizationMode) {
+    cli.host = {
+      options: {
+        toolAuthorization: { mode: parsed.toolAuthorizationMode },
+      },
+    };
+  }
   const overlays: ProfileOverlay[] = parsed.overlays.map((file) => ({ kind: "file", file }));
   return {
     source,
@@ -262,7 +275,7 @@ function assemblyOptions(parsed: ParsedOptions, options: RunNervusCliOptions): H
     additiveCapabilities: parsed.capabilities,
     env,
     runtime,
-    contract: genericContract(env),
+    contract: genericContract(env, options.approvalAdapter),
     ...(contribution ? { contributions: [contribution] } : {}),
   };
 }
@@ -319,19 +332,36 @@ function generatedProfile(
   };
 }
 
-function genericContract(env: Readonly<Record<string, string | undefined>>): HostContract {
+function genericContract(
+  env: Readonly<Record<string, string | undefined>>,
+  approval?: ToolApprovalAdapter,
+): HostContract {
   return {
     id: "nervus/generic-host",
     version: "1.0.0",
     digest: digest("nervus/generic-host@1"),
     hostType: "nervus-cli",
-    hostOptionsSchema: { type: "object", additionalProperties: false },
+    hostOptionsSchema: toolAuthorizationHostOptionsSchema,
     runtime: { workspace: "string" },
+    defaults: {
+      host: {
+        options: toolAuthorizationHostDefaults,
+      },
+    },
     builtInCapabilityRoots: [fileURLToPath(new URL("../../capabilities", import.meta.url))],
     defaultStateDirectory({ profile }) {
       const identity = profile.sources.at(-1)?.path ?? `${profile.baseDirectory}:${profile.profileId}`;
       const root = env.XDG_STATE_HOME ?? resolve(homedir(), ".local/state");
       return resolve(root, "nervus", "profiles", digest(identity).slice(0, 20), "sessions");
+    },
+    resolveToolAuthorizer(effective, { requireRuntime }) {
+      return resolveHostToolAuthorizer(effective, {
+        id: "nervus-cli/supervised",
+        revision: 1,
+        autoAllowTools: ["fs/read", "fs/list", "skills/activate"],
+        ...(approval ? { approval } : {}),
+        requireRuntime,
+      });
     },
   };
 }
@@ -361,6 +391,7 @@ function parseOptions(argv: readonly string[], defaults: { readonly sessionId?: 
   let profile: string | undefined;
   let model: string | undefined;
   let json = false;
+  let toolAuthorizationMode: "yolo" | "supervised" | undefined;
   const prompt: string[] = [];
   const capabilityRoots: string[] = [];
   const capabilities: string[] = [];
@@ -376,6 +407,13 @@ function parseOptions(argv: readonly string[], defaults: { readonly sessionId?: 
     else if (argument === "--profile") profile = resolve(requiredArgument(argv[++index], "--profile"));
     else if (argument === "--overlay") overlays.push(resolve(requiredArgument(argv[++index], "--overlay")));
     else if (argument === "--model") model = requiredArgument(argv[++index], "--model");
+    else if (argument === "--mode") {
+      toolAuthorizationMode = optionalEnum(
+        requiredArgument(argv[++index], "--mode"),
+        ["yolo", "supervised"] as const,
+        "--mode",
+      );
+    }
     else if (argument === "--json") json = true;
     else if (argument?.startsWith("--")) throw new Error(`Unknown option: ${argument}`);
     else if (argument !== undefined) prompt.push(argument);
@@ -392,6 +430,7 @@ function parseOptions(argv: readonly string[], defaults: { readonly sessionId?: 
     overlays,
     ...(model ? { model } : {}),
     json,
+    ...(toolAuthorizationMode ? { toolAuthorizationMode } : {}),
   };
 }
 
@@ -451,7 +490,7 @@ function formatError(error: unknown): string {
 function writeUsage(io: CliIO): void {
   io.write([
     "Usage:",
-    "  nervus chat [--profile <file>] [--overlay <file>] [--workspace <path>] [--session <id>] [--new] [prompt]",
+    "  nervus chat [--profile <file>] [--overlay <file>] [--workspace <path>] [--mode yolo|supervised] [--session <id>] [--new] [prompt]",
     "  nervus sessions list [--profile <file>] [--workspace <path>]",
     "  nervus sessions inspect <id> [--profile <file>] [--workspace <path>]",
     "  nervus sessions resume <id> [--profile <file>] [--workspace <path>] [prompt]",

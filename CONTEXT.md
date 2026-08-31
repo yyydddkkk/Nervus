@@ -90,6 +90,22 @@ _Avoid_: Action, function call
 The normalized success or error content corresponding to exactly one ToolCall.
 _Avoid_: Tool response, output
 
+**Tool Authorizer**:
+The single Host-selected policy Adapter in a Host Assembly that may allow or deny a ToolCall before its Tool executes. It may narrow an Agent's Authority Ceiling but never expand it, and it does not provide process or resource isolation.
+_Avoid_: Permission system, Sandbox, Tool wrapper
+
+**Authority Ceiling**:
+The maximum authority available to an Agent for one Turn, fixed by its AgentSnapshot Tool selection and each selected trusted Tool Adapter's execution contract. Approval and Authorization Modes cannot expand the Ceiling.
+_Avoid_: Permission mode, approval scope
+
+**YOLO Mode**:
+A Host mode whose Tool Authorizer allows every ToolCall within the Agent's Authority Ceiling without per-call approval. It neither expands the Ceiling nor promises process or resource isolation.
+_Avoid_: Automatic mode, unrestricted mode
+
+**Supervised Mode**:
+A Host mode whose Tool Authorizer may allow, deny, or request human approval for a ToolCall within the Agent's Authority Ceiling.
+_Avoid_: Safe mode, restricted mode
+
 ## Context
 
 **ContextBlock**:
